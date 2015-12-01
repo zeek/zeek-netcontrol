@@ -63,23 +63,23 @@ class Listen:
         event_name = str(m[0])
         print event_name
 
-        if ( event_name == "Pacf::broker_add_rule" ):
+        if ( event_name == "NetControl::broker_add_rule" ):
             if use_threads:
                 thread.start_new_thread(self.add_remove_rule, (m, True))
             else:
                 self.add_remove_rule(m, True)
-        elif ( event_name == "Pacf::broker_remove_rule" ):
+        elif ( event_name == "NetControl::broker_remove_rule" ):
             if use_threads:
                 thread.start_new_thread(self.add_remove_rule, (m, False))
             else:
                 self.add_remove_rule(m, False)
-        elif ( event_name == "Pacf::broker_rule_added" ):
+        elif ( event_name == "NetControl::broker_rule_added" ):
             pass
-        elif ( event_name == "Pacf::broker_rule_removed" ):
+        elif ( event_name == "NetControl::broker_rule_removed" ):
             pass
-        elif ( event_name == "Pacf::broker_rule_error" ):
+        elif ( event_name == "NetControl::broker_rule_error" ):
             pass
-        elif ( event_name == "Pacf::broker_rule_timeout" ):
+        elif ( event_name == "NetControl::broker_rule_timeout" ):
             pass
         else:
             self.logger.error("Unknown event %s", event_name)
@@ -128,7 +128,7 @@ class Listen:
             self.rule_event("removed", m[1], m[2], output)
 
     def rule_event(self, event, id, rule, msg):
-        m = message([data("Pacf::broker_rule_"+event)])
+        m = message([data("NetControl::broker_rule_"+event)])
         m.push_back(id)
         m.push_back(rule)
         m.push_back(data(msg))

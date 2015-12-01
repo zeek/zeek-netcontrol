@@ -162,15 +162,15 @@ class Listen:
         event_name = str(m[0])
         print event_name
 
-        if ( event_name == "Pacf::acld_add_rule" ):
+        if ( event_name == "NetControl::acld_add_rule" ):
             self.add_remove_rule(m, True)
-        elif ( event_name == "Pacf::acld_remove_rule" ):
+        elif ( event_name == "NetControl::acld_remove_rule" ):
             self.add_remove_rule(m, False)
-        elif ( event_name == "Pacf::acld_rule_added" ):
+        elif ( event_name == "NetControl::acld_rule_added" ):
             pass
-        elif ( event_name == "Pacf::acld_rule_removed" ):
+        elif ( event_name == "NetControl::acld_rule_removed" ):
             pass
-        elif ( event_name == "Pacf::acld_rule_error" ):
+        elif ( event_name == "NetControl::acld_rule_error" ):
             pass
         else:
             self.logger.error("Unknown event %s", event_name)
@@ -198,7 +198,7 @@ class Listen:
 #            self.rule_event("removed", m[1], m[2], cmd)
 
     def rule_event(self, event, id, rule, msg):
-        m = message([data("Pacf::acld_rule_"+event)])
+        m = message([data("NetControl::acld_rule_"+event)])
         m.push_back(id)
         m.push_back(rule)
         m.push_back(data(msg))
