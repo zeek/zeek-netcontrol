@@ -56,7 +56,8 @@ Command-line connector
 The [command-line](command-line/) directory contains a script that can be used to
 interface the NetControl framework to command-line invocations.
 [commands.yaml](command-line/commands.yaml) shows an example that can be used to
-invoke iptables.
+invoke iptables. An example script that simply blocks all connections is provided in
+[example.bro](command-line/example.bro).
 
 Acld connector
 --------------
