@@ -76,6 +76,10 @@ class BroController(app_manager.RyuApp):
         self.dpset = kwargs['dpset']
         self.data = {}
         self.data['dpset'] = self.dpset
+        # store DPID->name mapping. We create the mapping implicitely
+        # for all flow_clear and flow_mod events that we get and use
+        # it for the returning flow_removed events
+        self.dpids = {}
 
         self.epl = endpoint("listener")
 
@@ -155,6 +159,8 @@ class BroController(app_manager.RyuApp):
             self.logger.error("dpid %d not found for clear", dpid)
             return
 
+        self.dpids[dp.id] = name
+
         flow = {'table_id': dp.ofproto.OFPTT_ALL}
         _ofp_version = dp.ofproto.OFP_VERSION
         _ofctl = supported_ofctl.get(_ofp_version, None)
@@ -197,6 +203,8 @@ class BroController(app_manager.RyuApp):
             self.logger.error("name %s dpid %d not found for flow_mod", name, dpid)
             self.send_error(m[3], m[4], "dpid not found")
             return
+
+        self.dpids[dp.id] = name
 
         if dp.ofproto.OFP_VERSION != ofproto_v1_0.OFP_VERSION:
             if 'nw_dst' in match:
@@ -425,6 +433,10 @@ class BroController(app_manager.RyuApp):
         ofp = dp.ofproto
         match = msg.match
 
+        if dp.id not in self.dpids
+            self.logger.error("Flow remove for unknown DPID %d", dp.id)
+            return
+
         #print "Flow removed"
 
         match_vec = vector_of_field([])
@@ -481,7 +493,7 @@ class BroController(app_manager.RyuApp):
         else:
             match_vec.push_back(field())
 
-        m = message([data("OpenFlow::flow_removed"), data(record(match_vec)), data(msg.cookie), data(msg.priority), data(msg.reason), data(msg.duration_sec), data(msg.idle_timeout), data(msg.packet_count), data(msg.byte_count)])
+        m = message([data("OpenFlow::flow_removed"), data(self.dpids[dp.id]), data(record(match_vec)), data(msg.cookie), data(msg.priority), data(msg.reason), data(msg.duration_sec), data(msg.idle_timeout), data(msg.packet_count), data(msg.byte_count)])
         self.epl.send(queuename, m)
 
 
