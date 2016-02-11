@@ -138,15 +138,16 @@ class BroController(app_manager.RyuApp):
             return
 
     def event_flow_clear(self, m):
-        if ( len(m) != 2 ) or ( m[1].which() != data.tag_count ):
+        if ( len(m) != 3 ) or ( m[1].which() != data.tag_string ) or ( m[2].which() != data.tag_count ):
             self.logger.error("wrong number of elements or type in tuple for event_flow_clear")
             return
 
-        # since this is really only a  convenience function we should return it and just do the 
+        # since this is really only a  convenience function we should return it and just do the
         # flow-mod from bro ourselves
+        name = m[1].as_string()
 
-        dpid = m[1].as_count()
-        self.logger.info("flow_clear for %d", dpid)
+        dpid = m[2].as_count()
+        self.logger.info("flow_clear for %s %d", name, dpid)
 
         dp = ryu.app.ofctl.api.get_datapath(self, int(dpid))
 
@@ -167,31 +168,34 @@ class BroController(app_manager.RyuApp):
 
         ryu.app.ofctl.api.send_msg(self, msg)
 
-    def send_error(self, match, flow_mod, msg):
+    def send_error(self, name, match, flow_mod, msg):
         m = message([data("OpenFlow::flow_mod_failure")])
+        m.push_back(data(name))
         m.push_back(match)
         m.push_back(flow_mod)
         m.push_back(data(msg))
         self.epl.send(queuename, m)
 
-    def send_success(self, match, flow_mod, msg):
-        m = message([data("OpenFlow::flow_mod_success"), match, flow_mod, data(msg)])
+    def send_success(self, name, match, flow_mod, msg):
+        m = message([data("OpenFlow::flow_mod_success"), data(name), match, flow_mod, data(msg)])
         self.epl.send(queuename, m)
 
     def event_flow_mod(self, m):
-        if ( len(m) != 4 ) or ( m[1].which() != data.tag_count ) or ( m[2].which() != data.tag_record ) or ( m[3].which() != data.tag_record ):
+        if ( len(m) != 5 ) or ( m[1].which() != data.tag_string ) or ( m[2].which() != data.tag_count ) or ( m[3].which() != data.tag_record ) or ( m[4].which() != data.tag_record ):
             self.logger.error("wrong number of elements or type in tuple for event_flow_mod")
             return
 
-        dpid = m[1].as_count()
-        match = self.parse_ofp_match(m[2])
-        flow_mod = self.parse_ofp_flow_mod(m[3])
+        name = m[1].as_string()
+
+        dpid = m[2].as_count()
+        match = self.parse_ofp_match(m[3])
+        flow_mod = self.parse_ofp_flow_mod(m[4])
 
         dp = ryu.app.ofctl.api.get_datapath(self, int(dpid))
 
         if dp is None:
-            self.logger.error("dpid %d not found for flow_mod", dpid)
-            self.send_error(m[2], m[3], "dpid not found")
+            self.logger.error("name %s dpid %d not found for flow_mod", name, dpid)
+            self.send_error(m[3], m[4], "dpid not found")
             return
 
         if dp.ofproto.OFP_VERSION != ofproto_v1_0.OFP_VERSION:
@@ -361,14 +365,14 @@ class BroController(app_manager.RyuApp):
 
         if cmd is None:
             self.logger.error("command %s could not be parsed", cmdstr)
-            self.send_error(m[2], m[3], "cmd not recognized")
+            self.send_error(m[3], m[4], "cmd not recognized")
             return
 
         _ofp_version = dp.ofproto.OFP_VERSION
         _ofctl = supported_ofctl.get(_ofp_version, None)
         if _ofctl is None:
             self.logger.error("unsupported openflow protocol")
-            self.send_error(m[2], m[3], "unsupported openflow protocol")
+            self.send_error(m[3], m[4], "unsupported openflow protocol")
             return
 
         dp.brosend = 1 # give it to us...
@@ -389,10 +393,10 @@ class BroController(app_manager.RyuApp):
 
         try:
             ryu.app.ofctl.api.send_msg(self, msg)
-            self.send_success(m[2], m[3], "")
+            self.send_success(name, m[3], m[4], "")
         except ryu.app.ofctl.exception.OFError as err:
             self.logger.error("flow_mod execution error %s", err)
-            self.send_error(m[2], m[3], str(err))
+            self.send_error(name, m[3], m[4], str(err))
 
     def parse_ofp_match(self, m):
         match = ['in_port', 'dl_src', 'dl_dst', 'dl_vlan', 'dl_vlan_pcp', 'dl_type', 'nw_tos', 'nw_proto', 'nw_src', 'nw_dst', 'tp_src', 'tp_dst']
