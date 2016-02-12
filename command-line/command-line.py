@@ -86,12 +86,13 @@ class Listen:
             return
 
     def add_remove_rule(self, m, add):
-        if ( len(m) != 3 ) or ( m[1].which() != data.tag_count ) or ( m[2].which() != data.tag_record ) :
+        if ( len(m) != 4 ) or ( m[1].which() != data.tag_string ) or ( m[2].which() != data.tag_count ) or ( m[3].which() != data.tag_record ) :
             self.logger.error("wrong number of elements or type in tuple for event_flow_mod")
             return
 
-        id = m[1].as_count
-        rule = self.record_to_record("rule", m[2])
+        name = m[1].as_string
+        id = m[2].as_count
+        rule = self.record_to_record("rule", m[3])
         print rule
         cmd = self.rule_to_cmd_dict(rule)
         print cmd
@@ -123,12 +124,13 @@ class Listen:
                 return
 
         if add == True:
-            self.rule_event("added", m[1], m[2], output)
+            self.rule_event("added", m[1], m[2], m[3], output)
         else:
-            self.rule_event("removed", m[1], m[2], output)
+            self.rule_event("removed", m[1], m[2], m[3], output)
 
-    def rule_event(self, event, id, rule, msg):
+    def rule_event(self, event, name, id, rule, msg):
         m = message([data("NetControl::broker_rule_"+event)])
+        m.push_back(name)
         m.push_back(id)
         m.push_back(rule)
         m.push_back(data(msg))
