@@ -3,10 +3,15 @@
 
 const broker_port: port = 9999/tcp &redef;
 
-event bro_init()
+event NetControl::init()
 	{
 	local pacf_acld = NetControl::create_acld([$acld_host=127.0.0.1, $acld_port=broker_port, $acld_topic="bro/event/pacf"]);
 	NetControl::activate(pacf_acld, 0);
+	}
+
+event NetControl::init_done()
+	{
+	print "NeControl is starting operations";
 	}
 
 event BrokerComm::outgoing_connection_established(peer_address: string,

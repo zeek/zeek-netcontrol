@@ -11,7 +11,7 @@ const switch_dpid: count = 12 &redef;
 const switch_bro_port: count = 19 &redef;
 
 
-event bro_init() &priority=2
+event NetControl::init() &priority=2
 	{
 	of_controller = OpenFlow::broker_new("of", 127.0.0.1, broker_port, "bro/event/openflow", switch_dpid);
 	local pacf_of = NetControl::create_openflow(of_controller, NetControl::OfConfig($monitor=T, $forward=F, $priority_offset=+5));
@@ -23,6 +23,11 @@ event BrokerComm::outgoing_connection_established(peer_address: string,
                                             peer_name: string)
 	{
 	print "BrokerComm::outgoing_connection_established", peer_address, peer_port;
+	}
+
+event NetControl::init_done()
+	{
+	print "NeControl is starting operations";
 	OpenFlow::flow_clear(of_controller);
 	OpenFlow::flow_mod(of_controller, [], [$cookie=OpenFlow::generate_cookie(1337), $priority=2, $command=OpenFlow::OFPFC_ADD, $actions=[$out_ports=vector(switch_bro_port)]]);
 	}
