@@ -11,18 +11,10 @@ thorough testing.
 Installation Instructions
 -------------------------
 
-To use the connector scripts, you need to install the
-[topic/johanna/netcontrol](https://github.com/bro/bro/tree/topic/johanna/netcontrol)
-branch of Bro with commands similar to this:
+To use the connector scripts, you need to install a current master version
+of Bro with commands similar to this:
 
-	git clone --recursive -b topic/johanna/netcontrol git://git.bro.org/bro
-	./configure --prefix=[install prefix] --with-libcaf=[libcaf location]
-	make install
-
-You also need an installation of the Bro Communication Library [broker](https://github.com/bro/broker)
-with enabled python bindings. Installation will be similar to this:
-
-	git clone --recursive git://git.bro.org/broker
+	git clone --recursive git://git.bro.org/bro
 	./configure --prefix=[install prefix] --with-libcaf=[libcaf location]
 	make install
 
