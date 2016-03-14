@@ -141,8 +141,8 @@ class Listen:
                 sys.exit(-1)
                 return
 
-        if self.buffer.find("\n") != -1:
-            line, self.buffer = self.buffer.split("\n", 1)
+        if self.buffer.find("\r\n") != -1:
+            line, self.buffer = self.buffer.split("\r\n", 1)
             return line
         else:
             return None
@@ -189,11 +189,11 @@ class Listen:
 
         cmd = arule['command'] + " " + str(arule['cookie']) + " " + arule['arg']
         if 'comment' in arule and arule['comment'] != None and len(arule['comment']) > 0:
-            cmd += " -\n"+arule['comment']+"\n."
+            cmd += " -\r\n"+arule['comment']+"\r\n."
 
         self.waiting[arule['cookie']] = {'add': add, 'cmd': cmd, 'id': m[1], 'rule': m[2], 'arule': m[3]}
         self.logger.info("Sending to ACLD: %s", cmd)
-        self.sock.sendall(cmd+"\n")
+        self.sock.sendall(cmd+"\r\n")
 
     def rule_event(self, event, id, arule, rule, msg):
         arule = self.record_to_record("acldrule", arule)
