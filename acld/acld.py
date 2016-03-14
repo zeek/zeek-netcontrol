@@ -270,7 +270,7 @@ class Listen:
             return None
 
 logging.basicConfig(level=logging.INFO,
-        format='%(created)s:%(name)s:%(levelname)s:%(message)s')
+        format='%(created).6f:%(name)s:%(levelname)s:%(message)s')
 logging.info("Starting acld.py...")
 brocon = Listen(queuename, "127.0.0.1", 9999)
 brocon.listen_loop()
