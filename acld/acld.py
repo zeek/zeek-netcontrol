@@ -11,6 +11,7 @@ import threading
 import fcntl, os
 import socket
 import errno
+import sys
 
 from pybroker import *
 from select import select
@@ -43,10 +44,10 @@ class Listen:
 
 
     def listen_loop(self):
-        self.logger.info("Broker loop...")
+        self.logger.debug("Broker loop...")
 
         while 1==1:
-            self.logger.info("Waiting for broker message")
+            self.logger.debug("Waiting for broker message")
             readable, writable, exceptional = select([self.icsq.fd(), self.mql.fd(), self.sock],[],[])
             msgs = None
             if ( self.icsq.fd() in readable ):
@@ -56,13 +57,13 @@ class Listen:
             elif ( self.sock in readable ):
                 line = self.read_acld()
                 while line != None:
-                    self.logger.info("Acld line: %s", line)
+                    self.logger.info("Received from ACLD: %s", line)
                     self.parse_acld(line)
                     line = self.read_acld()
                 continue
 
             for m in msgs:
-                self.logger.info("Got broker message")
+                self.logger.debug("Got broker message")
                 self._handle_broker_message(m)
 
     def parse_acld(self, line):
@@ -108,12 +109,12 @@ class Listen:
             del self.waiting[cookie]
 
             if "-failed" in cmd:
-                self.rule_event("error", msg['id'], msg['rule'], comment)
+                self.rule_event("error", msg['id'], msg['arule'], msg['rule'], comment)
             else:
                 type = "added"
                 if msg['add'] == False:
                     type = "removed"
-                self.rule_event(type, msg['id'], msg['rule'], comment)
+                self.rule_event(type, msg['id'], msg['arule'], msg['rule'], comment)
 
         else:
             self.logger.warning("Got response to cookie %d we did not send. Ignoring", cookie)
@@ -147,30 +148,29 @@ class Listen:
             return None
 
     def _handle_broker_message(self, m):
-        if ( type(m).__name__ == "incoming_connection_status" ):
-            self.logger.info("Incoming connection established")
+        if type(m).__name__ == "incoming_connection_status":
+            self.logger.info("Incoming connection established.")
             return
 
-        if ( type(m).__name__ != "tuple" ):
-            self.logger.error("Unexpected type %s, expected tuple", type(m).__name__)
+        if type(m).__name__ != "tuple":
+            self.logger.error("Unexpected type %s, expected tuple.", type(m).__name__)
             return
 
-        if ( len(m) < 1 ):
+        if len(m) < 1:
             self.logger.error("Tuple without content?")
             return
 
         event_name = str(m[0])
-        print event_name
 
-        if ( event_name == "NetControl::acld_add_rule" ):
+        if event_name == "NetControl::acld_add_rule":
             self.add_remove_rule(m, True)
-        elif ( event_name == "NetControl::acld_remove_rule" ):
+        elif event_name == "NetControl::acld_remove_rule":
             self.add_remove_rule(m, False)
-        elif ( event_name == "NetControl::acld_rule_added" ):
+        elif event_name == "NetControl::acld_rule_added":
             pass
-        elif ( event_name == "NetControl::acld_rule_removed" ):
+        elif event_name == "NetControl::acld_rule_removed":
             pass
-        elif ( event_name == "NetControl::acld_rule_error" ):
+        elif event_name == "NetControl::acld_rule_error":
             pass
         else:
             self.logger.error("Unknown event %s", event_name)
@@ -181,23 +181,23 @@ class Listen:
             self.logger.error("wrong number of elements or type in tuple for acld_add|remove_rule")
             return
 
-        id = m[1].as_count
+        name = m[0].as_string()
+        id = m[1].as_count()
         arule = self.record_to_record("acldrule", m[3])
-        print arule
+
+        self.logger.info("Got event %s. id=%d, arule: %s", name, id, arule)
 
         cmd = arule['command'] + " " + str(arule['cookie']) + " " + arule['arg']
         if 'comment' in arule and arule['comment'] != None and len(arule['comment']) > 0:
             cmd += " -\n"+arule['comment']+"\n."
 
-        self.waiting[arule['cookie']] = {'add': add, 'cmd': cmd, 'id': m[1], 'rule': m[2]}
+        self.waiting[arule['cookie']] = {'add': add, 'cmd': cmd, 'id': m[1], 'rule': m[2], 'arule': m[3]}
+        self.logger.info("Sending to ACLD: %s", cmd)
         self.sock.sendall(cmd+"\n")
 
-#        if add == True:
-#            self.rule_event("added", m[1], m[2], cmd)
-#        else:
-#            self.rule_event("removed", m[1], m[2], cmd)
-
-    def rule_event(self, event, id, rule, msg):
+    def rule_event(self, event, id, arule, rule, msg):
+        arule = self.record_to_record("acldrule", arule)
+        self.logger.info("Sending to Bro: NetControl::acld_rule_%s id=%d, arule=%s, msg=%s", event, id.as_count(), arule, msg)
         m = message([data("NetControl::acld_rule_"+event)])
         m.push_back(id)
         m.push_back(rule)
@@ -269,8 +269,9 @@ class Listen:
             self.logger.error("Unsupported type %d", el.which() )
             return None
 
-logging.basicConfig(level=logging.DEBUG)
-logging.info("Starting...")
+logging.basicConfig(level=logging.INFO,
+        format='%(created)s:%(name)s:%(levelname)s:%(message)s')
+logging.info("Starting acld.py...")
 brocon = Listen(queuename, "127.0.0.1", 9999)
 brocon.listen_loop()
 
