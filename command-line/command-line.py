@@ -213,6 +213,6 @@ config = yaml.load(stream)
 logging.basicConfig(level=args.debug)
 
 logging.info("Starting command-line client...")
-brocon = Listen(args.topic, args.listen, args.port, config)
+brocon = Listen(args.topic, args.listen, int(args.port), config)
 brocon.listen_loop()
 

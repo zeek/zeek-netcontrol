@@ -283,6 +283,6 @@ args = parseArgs()
 
 logging.basicConfig(level=args.debug)
 logging.info("Starting...")
-brocon = Listen(args.topic, args.listen, args.port, args.acld_host, args.acld_port)
+brocon = Listen(args.topic, args.listen, int(args.port), args.acld_host, (args.acld_port))
 brocon.listen_loop()
 
