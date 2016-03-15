@@ -8,6 +8,8 @@ import thread
 import yaml
 import string
 import re
+import argparse
+import sys
 
 from subprocess import check_output
 from subprocess import CalledProcessError
@@ -15,11 +17,20 @@ from subprocess import CalledProcessError
 
 from enum import Enum, unique
 
-queuename = "bro/event/netcontrol-example"
+def parseArgs():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--listen', default="127.0.0.1", help="Address to listen on for connections. Default: 127.0.0.1")
+    parser.add_argument('--port', default=9977, help="Port to listen on for connections. Default: 9977")
+    parser.add_argument('--topic', default="bro/event/netcontrol-example", help="Topic to subscribe to. Default: bro/event/netcontrol-example")
+    parser.add_argument('--file', default="commands.yaml", help="File to read commands from. Default: commands.yaml")
+    parser.add_argument('--debug', const=logging.DEBUG, default=logging.INFO, action='store_const', help="Enable debug output")
+
+    args = parser.parse_args()
+    return args
 
 class Listen:
     def __init__(self, queue, host, port, commands, **kwargs):
-        self.logger = logging.getLogger("__name__")
+        self.logger = logging.getLogger(__name__)
         self.endpoint = netcontrol.Endpoint(queue, host, port)
         self.queuename = queue
         self.commands = commands
@@ -62,12 +73,14 @@ class Listen:
 
         output = ""
 
+        self.logger.info("Received %s from Bro: %s", type, cmd)
+
         for i in commands:
             currcmd = self.replace_command(i, cmd)
             output += "Command: "+currcmd+"\n"
 
             try:
-                self.logger.debug("Executing "+currcmd)
+                self.logger.info("Executing "+currcmd)
                 cmdout = check_output(currcmd, shell=True)
                 output += "Output: "+str(cmdout)+"\n"
                 self.logger.debug("Command executed succefsully")
@@ -83,8 +96,10 @@ class Listen:
                 return
 
         if response.type == netcontrol.ResponseType.AddRule:
+            self.logger.info("Sending rule_added to Bro")
             self.endpoint.sendRuleAdded(response, output)
         else:
+            self.logger.info("Sending rule_removed to Bro")
             self.endpoint.sendRuleRemoved(response, output)
 
     def replace_single_command(self, argstr, cmds):
@@ -190,11 +205,14 @@ class Listen:
 
         return cmd
 
-stream = file('commands.yaml', 'r')
+args = parseArgs()
+
+stream = file(args.file, 'r')
 config = yaml.load(stream)
 
-logging.basicConfig(level=logging.DEBUG)
-logging.info("Starting...")
-brocon = Listen(queuename, "127.0.0.1", 9977, config)
+logging.basicConfig(level=args.debug)
+
+logging.info("Starting command-line client...")
+brocon = Listen(args.topic, args.listen, args.port, config)
 brocon.listen_loop()
 
