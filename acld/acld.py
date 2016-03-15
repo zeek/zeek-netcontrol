@@ -11,24 +11,33 @@ import threading
 import fcntl, os
 import socket
 import errno
+import argparse
 import sys
 
 from pybroker import *
 from select import select
 
-queuename = "bro/event/pacf"
-acld_host = "127.0.0.1"
-acld_port = 11775
+def parseArgs():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--listen', default="127.0.0.1", help="Address to listen on for connections. Default: 127.0.0.1")
+    parser.add_argument('--port', default=9999, help="Port to listen on for connections. Default: 9999")
+    parser.add_argument('--acld_host', default="127.0.0.1", help="ACLD host to connect to. Default: 127.0.0.1")
+    parser.add_argument('--acld_port', default=11775, help="ACLD port to connect to. Default: 11775")
+    parser.add_argument('--topic', default="bro/event/pacf", help="Topic to subscribe to. Default: bro/event/pacf")
+    parser.add_argument('--debug', const=logging.DEBUG, default=logging.INFO, action='store_const', help="Enable debug output")
+
+    args = parser.parse_args()
+    return args
 
 class Listen:
-    def __init__(self, queue, host, port):
+    def __init__(self, queue, host, port, acld_host, acld_port):
         self.logger = logging.getLogger("brokerlisten")
 
         self.queuename = queue
         self.epl = endpoint("listener")
         self.epl.listen(port, host)
         self.icsq = self.epl.incoming_connection_status()
-        self.mql = message_queue(queuename, self.epl)
+        self.mql = message_queue(self.queuename, self.epl)
 
         self.sock = socket.socket()
         self.sock.connect((acld_host, acld_port))
@@ -269,9 +278,10 @@ class Listen:
             self.logger.error("Unsupported type %d", el.which() )
             return None
 
-logging.basicConfig(level=logging.INFO,
+args = parseArgs()
+logging.basicConfig(level=args.debug,
         format='%(created).6f:%(name)s:%(levelname)s:%(message)s')
 logging.info("Starting acld.py...")
-brocon = Listen(queuename, "127.0.0.1", 9999)
+brocon = Listen(args.topic, args.listen, int(args.port), args.acld_host, (args.acld_port))
 brocon.listen_loop()
 

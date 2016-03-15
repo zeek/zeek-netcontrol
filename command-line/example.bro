@@ -1,12 +1,12 @@
 @load base/protocols/conn
 @load base/frameworks/netcontrol
 
-const broker_port: port = 9999/tcp &redef;
+const broker_port: port = 9977/tcp &redef;
 
 event NetControl::init()
 	{
-	local pacf_broker = NetControl::create_broker(127.0.0.1, broker_port, "bro/event/pacf", F);
-	NetControl::activate(pacf_broker, 0);
+	local netcontrol_broker = NetControl::create_broker(127.0.0.1, broker_port, "bro/event/netcontrol-example", F);
+	NetControl::activate(netcontrol_broker, 0);
 	}
 
 event NetControl::init_done()

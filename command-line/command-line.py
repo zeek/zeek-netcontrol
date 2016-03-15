@@ -3,104 +3,67 @@
 # Command-line interface for the Network Control Framework of Bro, using Broker.
 
 import logging
-import time
-import re
+import netcontrol
 import thread
 import yaml
 import string
+import re
+import argparse
+import sys
 
 from subprocess import check_output
 from subprocess import CalledProcessError
 #from future.utils import viewitems
 
-from pybroker import *
-from select import select
+from enum import Enum, unique
 
-queuename = "bro/event/pacf"
-use_threads = True
+def parseArgs():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--listen', default="127.0.0.1", help="Address to listen on for connections. Default: 127.0.0.1")
+    parser.add_argument('--port', default=9977, help="Port to listen on for connections. Default: 9977")
+    parser.add_argument('--topic', default="bro/event/netcontrol-example", help="Topic to subscribe to. Default: bro/event/netcontrol-example")
+    parser.add_argument('--file', default="commands.yaml", help="File to read commands from. Default: commands.yaml")
+    parser.add_argument('--debug', const=logging.DEBUG, default=logging.INFO, action='store_const', help="Enable debug output")
+
+    args = parser.parse_args()
+    return args
 
 class Listen:
-    def __init__(self, queue, host, port, commands):
-        self.logger = logging.getLogger("brokerlisten")
-
+    def __init__(self, queue, host, port, commands, **kwargs):
+        self.logger = logging.getLogger(__name__)
+        self.endpoint = netcontrol.Endpoint(queue, host, port)
         self.queuename = queue
-        self.epl = endpoint("listener")
-        self.epl.listen(port, host)
-        self.icsq = self.epl.incoming_connection_status()
-        self.mql = message_queue(queuename, self.epl)
         self.commands = commands
-        #thread.start_new_thread(self._listen_loop, ())
+        self.use_threads = kwargs.get('use_threads', True)
 
     def listen_loop(self):
-        self.logger.info("Broker loop...")
+        self.logger.debug("Listen loop...")
 
         while 1==1:
-            self.logger.info("Waiting for broker message")
-            readable, writable, exceptional = select([self.icsq.fd(), self.mql.fd()],[],[])
-            msgs = None
-            if ( self.icsq.fd() in readable ):
-                msgs = self.icsq.want_pop()
-            elif ( self.mql.fd() in readable ):
-                msgs = self.mql.want_pop()
+            response = self.endpoint.getNextCommand()
 
-            for m in msgs:
-                self.logger.info("Got broker message")
-                self._handle_broker_message(m)
+            if response.type == netcontrol.ResponseType.AddRule:
+                if self.use_threads:
+                    thread.start_new_thread(self._add_remove_rule, (response, ))
+                else:
+                    self._add_remove_rule(response)
+            if response.type == netcontrol.ResponseType.RemoveRule:
+                if self.use_threads:
+                    thread.start_new_thread(self._add_remove_rule, (response, ))
+                else:
+                    self._add_remove_rule(response)
 
-    def _handle_broker_message(self, m):
-        if ( type(m).__name__ == "incoming_connection_status" ):
-            self.logger.info("Incoming connection established")
-            return
+    def _add_remove_rule(self, response):
 
-        if ( type(m).__name__ != "tuple" ):
-            self.logger.error("Unexpected type %s, expected tuple", type(m).__name__)
-            return
+        cmd = self.rule_to_cmd_dict(response.rule)
 
-        if ( len(m) < 1 ):
-            self.logger.error("Tuple without content?")
-            return
-
-        event_name = str(m[0])
-        print event_name
-
-        if ( event_name == "NetControl::broker_add_rule" ):
-            if use_threads:
-                thread.start_new_thread(self.add_remove_rule, (m, True))
-            else:
-                self.add_remove_rule(m, True)
-        elif ( event_name == "NetControl::broker_remove_rule" ):
-            if use_threads:
-                thread.start_new_thread(self.add_remove_rule, (m, False))
-            else:
-                self.add_remove_rule(m, False)
-        elif ( event_name == "NetControl::broker_rule_added" ):
-            pass
-        elif ( event_name == "NetControl::broker_rule_removed" ):
-            pass
-        elif ( event_name == "NetControl::broker_rule_error" ):
-            pass
-        elif ( event_name == "NetControl::broker_rule_timeout" ):
-            pass
-        else:
-            self.logger.error("Unknown event %s", event_name)
-            return
-
-    def add_remove_rule(self, m, add):
-        if ( len(m) != 4 ) or ( m[1].which() != data.tag_string ) or ( m[2].which() != data.tag_count ) or ( m[3].which() != data.tag_record ) :
-            self.logger.error("wrong number of elements or type in tuple for event_flow_mod")
-            return
-
-        name = m[1].as_string
-        id = m[2].as_count
-        rule = self.record_to_record("rule", m[3])
-        print rule
-        cmd = self.rule_to_cmd_dict(rule)
-        print cmd
-
-        if add == True:
+        if response.type == netcontrol.ResponseType.AddRule:
             type = 'add_rule'
-        else:
+        elif response.type == netcontrol.ResponseType.RemoveRule:
             type = 'remove_rule'
+        else:
+            self.logger.error("Internal error - incompabible rule type")
+            type = 'unknown'
 
         if not ( type in self.commands):
             self.logger.error("No %s in commands", type)
@@ -110,35 +73,38 @@ class Listen:
 
         output = ""
 
+        self.logger.info("Received %s from Bro: %s", type, cmd)
+
         for i in commands:
             currcmd = self.replace_command(i, cmd)
             output += "Command: "+currcmd+"\n"
 
             try:
-                print "Executing "+currcmd
-                cmdout = check_output(currcmd)
+                self.logger.info("Executing "+currcmd)
+                cmdout = check_output(currcmd, shell=True)
                 output += "Output: "+str(cmdout)+"\n"
+                self.logger.debug("Command executed succefsully")
             except CalledProcessError as err:
-                output = "Command "+currcmd+" failed with return code "+err.returncode+" and output: "+str(err.output)
-                self.rule_event("error", m[1], m[2], output)
+                output = "Command "+currcmd+" failed with return code "+str(err.returncode)+" and output: "+str(err.output)
+                self.logger.error(output)
+                self.endpoint.sendRuleError(response, output)
+                return
+            except OSError as err:
+                output = "Command "+currcmd+" failed with error code "+str(err.errno)+" ("+err.strerror+")"
+                sel.logger.error(output)
+                self.endpoint.sendRuleError(response, output)
                 return
 
-        if add == True:
-            self.rule_event("added", m[1], m[2], m[3], output)
+        if response.type == netcontrol.ResponseType.AddRule:
+            self.logger.info("Sending rule_added to Bro")
+            self.endpoint.sendRuleAdded(response, output)
         else:
-            self.rule_event("removed", m[1], m[2], m[3], output)
-
-    def rule_event(self, event, name, id, rule, msg):
-        m = message([data("NetControl::broker_rule_"+event)])
-        m.push_back(name)
-        m.push_back(id)
-        m.push_back(rule)
-        m.push_back(data(msg))
-        self.epl.send(self.queuename, m)
+            self.logger.info("Sending rule_removed to Bro")
+            self.endpoint.sendRuleRemoved(response, output)
 
     def replace_single_command(self, argstr, cmds):
         reg = re.compile('\[(?P<type>.)(?P<target>.*?)(?:\:(?P<argument>.*?))?\]')
-        print argstr
+        #print argstr
         m = reg.search(argstr)
 
         if m == None:
@@ -174,7 +140,6 @@ class Listen:
         reg = re.compile('\[(?:\?|\!).*?\]')
 
         return reg.sub(lambda x: self.replace_single_command(x.group(), args), command)
-
 
     def rule_to_cmd_dict(self, rule):
         cmd = {}
@@ -240,85 +205,14 @@ class Listen:
 
         return cmd
 
+args = parseArgs()
 
-    def record_to_record(self, name, m):
-
-        if m.which() != data.tag_record:
-            self.logger.error("Got non record element")
-
-        rec = m.as_record()
-
-        elements = None
-        if name == "rule":
-            elements = ['ty', 'target', 'entity', 'expire', 'priority', 'location', 'c', 'i', 'd', 's', 'mod', 'id', 'cid']
-        elif name == "rule->entity":
-            elements = ['ty', 'conn', 'flow', 'ip', 'mac']
-        elif name == "rule->entity->conn":
-            elements = ['orig_h', 'orig_p', 'resp_h', 'resp_p']
-        elif name == "rule->entity->flow":
-            elements = ['src_h', 'src_p', 'dst_h', 'dst_p', 'src_m', 'dst_m']
-        elif name == "rule->mod":
-            elements = ['src_h', 'src_p', 'dst_h', 'dst_p', 'src_m', 'dst_m', 'redirect_port']
-        else:
-            self.logger.error("Unknown record type %s", name)
-            return
-
-        dict = {}
-        for i in range(0, len(elements)):
-            if rec.fields()[i].valid() == False:
-                dict[elements[i]] = None
-                continue
-            elif rec.fields()[i].get().which() == data.tag_record:
-                dict[elements[i]] = self.record_to_record(name+"->"+elements[i], rec.fields()[i].get())
-                continue
-
-            dict[elements[i]] = self.convert_element(rec.fields()[i].get())
-
-        return dict
-
-    def convert_element(self, el):
-        if ( el.which() == data.tag_boolean ):
-            return el.as_bool()
-        if ( el.which() == data.tag_count ):
-            return el.as_count()
-        elif ( el.which() == data.tag_integer ):
-            return el.as_int()
-        elif ( el.which() == data.tag_real ):
-            return el.as_real()
-        elif ( el.which() == data.tag_string ):
-            return el.as_string()
-        elif ( el.which() == data.tag_address ):
-            return str(el.as_address())
-        elif ( el.which() == data.tag_subnet ):
-            return str(el.as_subnet())
-        elif ( el.which() == data.tag_port ):
-            p = str(el.as_port())
-            ex = re.compile('([0-9]+)(.*)')
-            res = ex.match(p)
-            return (res.group(1), res.group(2))
-        elif ( el.which() == data.tag_time ):
-            return el.as_time()
-        elif ( el.which() == data.tag_duration ):
-            return el.as_duration().value
-        elif ( el.which() == data.tag_enum_value ):
-            tmp = el.as_enum().name
-            return re.sub(r'.*::', r'', tmp)
-        elif ( el.which() == data.tag_vector ):
-            tmp = el.as_vector()
-            elements = []
-            for sel in tmp:
-                elements.append(self.convert_element(sel))
-            return elements
-
-        else:
-            self.logger.error("Unsupported type %d", el.which() )
-            return None
-
-stream = file('commands.yaml', 'r')
+stream = file(args.file, 'r')
 config = yaml.load(stream)
 
-logging.basicConfig(level=logging.DEBUG)
-logging.info("Starting...")
-brocon = Listen(queuename, "127.0.0.1", 9999, config)
+logging.basicConfig(level=args.debug)
+
+logging.info("Starting command-line client...")
+brocon = Listen(args.topic, args.listen, int(args.port), config)
 brocon.listen_loop()
 

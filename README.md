@@ -21,9 +21,28 @@ of Bro with commands similar to this:
 To allow python to find the installed python broker bindings, it might be necessary
 to adjust the PYTHONPATH variable similar to this:
 
-	export PYTHONPATH=[install prefix]/lib/python
+	export PYTHONPATH=[install prefix]/lib/python:[this directory]
 
 after that, you should be able to launch the provided scripts.
+
+API
+---
+
+The [netcontrol](netcontrol/) directory contains a python API for the broker backend
+of the Bro netcontrol framework. This API converts the Bro data structures into python
+dictionaries and allows to send back success and error messages to bro.
+
+A simple [example script](test/simple-client.py) is provided in the [test](test/)
+directory. The API is also used by the command-line connector.
+
+Command-line connector
+----------------------
+
+The [command-line](command-line/) directory contains a script that can be used to
+interface the NetControl framework to command-line invocations.
+[commands.yaml](command-line/commands.yaml) shows an example that can be used to
+invoke iptables. An example script that simply blocks all connections is provided in
+[example.bro](command-line/example.bro).
 
 OpenFlow connector
 ------------------
@@ -41,15 +60,6 @@ or similar. After that, OpenFlow switches should be able to connect to port 6633
 Broker connections can be made to port 9999. An example script that shunts all
 connection traffic to a switch after an SSL, SSH or GridFTP session has been
 established is provided in [example.bro](openflow/example.bro).
-
-Command-line connector
-----------------------
-
-The [command-line](command-line/) directory contains a script that can be used to
-interface the NetControl framework to command-line invocations.
-[commands.yaml](command-line/commands.yaml) shows an example that can be used to
-invoke iptables. An example script that simply blocks all connections is provided in
-[example.bro](command-line/example.bro).
 
 Acld connector
 --------------
