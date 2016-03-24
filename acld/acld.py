@@ -119,6 +119,8 @@ class Listen:
 
             if "-failed" in cmd:
                 self.rule_event("error", msg['id'], msg['arule'], msg['rule'], comment)
+            elif re.search("Note: .* is already ", comment):
+                self.rule_event("exists", msg['id'], msg['arule'], msg['rule'], comment)
             else:
                 type = "added"
                 if msg['add'] == False:
@@ -180,6 +182,8 @@ class Listen:
         elif event_name == "NetControl::acld_rule_removed":
             pass
         elif event_name == "NetControl::acld_rule_error":
+            pass
+        elif event_name == "NetControl::acld_rule_exists":
             pass
         else:
             self.logger.error("Unknown event %s", event_name)
