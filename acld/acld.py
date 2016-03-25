@@ -286,6 +286,6 @@ args = parseArgs()
 logging.basicConfig(level=args.debug,
         format='%(created).6f:%(name)s:%(levelname)s:%(message)s')
 logging.info("Starting acld.py...")
-brocon = Listen(args.topic, args.listen, int(args.port), args.acld_host, (args.acld_port))
+brocon = Listen(args.topic, args.listen, int(args.port), args.acld_host, int(args.acld_port))
 brocon.listen_loop()
 
