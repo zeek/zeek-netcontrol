@@ -18,11 +18,11 @@ event NetControl::init() &priority=2
 	NetControl::activate(pacf_of, 0);
 	}
 
-event BrokerComm::outgoing_connection_established(peer_address: string,
+event Broker::outgoing_connection_established(peer_address: string,
                                             peer_port: port,
                                             peer_name: string)
 	{
-	print "BrokerComm::outgoing_connection_established", peer_address, peer_port;
+	print "Broker::outgoing_connection_established", peer_address, peer_port;
 	}
 
 event NetControl::init_done()
