@@ -39,6 +39,9 @@ class Listen:
         self.icsq = self.epl.incoming_connection_status()
         self.mql = message_queue(self.queuename, self.epl)
 
+        self.acld_host = acld_host
+        self.acld_port = acld_port
+
         self.sock = socket.socket()
         self.sock.connect((acld_host, acld_port))
         fcntl.fcntl(self.sock, fcntl.F_SETFL, os.O_NONBLOCK)
@@ -136,10 +139,18 @@ class Listen:
         try:
             data = self.sock.recv(4096)
             if len(data) == 0:
-                self.logger.warning("Disconnected from acld, trying to reconnect")
-                self.sock = socket.socket()
-                self.sock.connect((acld_host, acld_port))
-                fcntl.fcntl(self.sock, fcntl.F_SETFL, os.O_NONBLOCK)
+                while 1==1:
+                    self.logger.warning("Disconnected from acld, trying to reconnect")
+                    try:
+                        self.sock.close()
+                        self.sock = socket.socket()
+                        self.sock.connect((self.acld_host, self.acld_port))
+                        fcntl.fcntl(self.sock, fcntl.F_SETFL, os.O_NONBLOCK)
+                        break
+                    except socket.error as msg:
+                        self.logger.error(msg)
+                        self.logger.info("Retrying connection in 5 seconds")
+                        time.sleep(5)
             self.buffer += data
         except socket.error, e:
             err = e.args[0]
