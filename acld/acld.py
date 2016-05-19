@@ -18,11 +18,16 @@ from pybroker import *
 from select import select
 
 def parseArgs():
+    defaultuser = os.getlogin()
+    defaulthost = socket.gethostname()
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--listen', default="127.0.0.1", help="Address to listen on for connections. Default: 127.0.0.1")
     parser.add_argument('--port', default=9999, help="Port to listen on for connections. Default: 9999")
     parser.add_argument('--acld_host', default="127.0.0.1", help="ACLD host to connect to. Default: 127.0.0.1")
     parser.add_argument('--acld_port', default=11775, help="ACLD port to connect to. Default: 11775")
+    parser.add_argument('--log-user', default=defaultuser, help='user name provided to acld (default: %(default)s)')
+    parser.add_argument('--log-host', default=defaulthost, help='host name provided to acld (default: %(default)s)')
     parser.add_argument('--topic', default="bro/event/pacf", help="Topic to subscribe to. Default: bro/event/pacf")
     parser.add_argument('--debug', const=logging.DEBUG, default=logging.INFO, action='store_const', help="Enable debug output")
 
@@ -30,7 +35,7 @@ def parseArgs():
     return args
 
 class Listen:
-    def __init__(self, queue, host, port, acld_host, acld_port):
+    def __init__(self, queue, host, port, acld_host, acld_port, log_user, log_host):
         self.logger = logging.getLogger("brokerlisten")
 
         self.queuename = queue
@@ -41,6 +46,8 @@ class Listen:
 
         self.acld_host = acld_host
         self.acld_port = acld_port
+
+	self.ident = '{%s@%s}' % (log_user, log_host)
 
         self.sock = socket.socket()
         self.sock.connect((acld_host, acld_port))
@@ -211,9 +218,11 @@ class Listen:
 
         self.logger.info("Got event %s. id=%d, arule: %s", name, id, arule)
 
-        cmd = arule['command'] + " " + str(arule['cookie']) + " " + arule['arg']
+        cmd = arule['command'] + " " + str(arule['cookie']) + " " + arule['arg'] + " -\r\n"
+        cmd += self.ident + "\r\n"
         if 'comment' in arule and arule['comment'] != None and len(arule['comment']) > 0:
-            cmd += " -\r\n"+arule['comment']+"\r\n."
+            cmd += arule['comment']+"\r\n"
+        cmd += "."
 
         self.waiting[arule['cookie']] = {'add': add, 'cmd': cmd, 'id': m[1], 'rule': m[2], 'arule': m[3]}
         self.logger.info("Sending to ACLD: %s", cmd)
@@ -297,6 +306,6 @@ args = parseArgs()
 logging.basicConfig(level=args.debug,
         format='%(created).6f:%(name)s:%(levelname)s:%(message)s')
 logging.info("Starting acld.py...")
-brocon = Listen(args.topic, args.listen, int(args.port), args.acld_host, int(args.acld_port))
+brocon = Listen(args.topic, args.listen, int(args.port), args.acld_host, int(args.acld_port), args.log_user, args.log_host)
 brocon.listen_loop()
 
