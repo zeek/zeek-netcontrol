@@ -218,15 +218,15 @@ class Listen:
 
         self.logger.info("Got event %s. id=%d, arule: %s", name, id, arule)
 
-        cmd = arule['command'] + " " + str(arule['cookie']) + " " + arule['arg'] + " -\r\n"
-        cmd += self.ident + "\r\n"
+        cmd = arule['command'] + " " + str(arule['cookie']) + " " + arule['arg'] + " -"
+        sendlist = [cmd, self.ident]
         if 'comment' in arule and arule['comment'] != None and len(arule['comment']) > 0:
-            cmd += arule['comment']+"\r\n"
-        cmd += "."
+            sendlist.append(cmd)
+        sendlist.append(".")
 
         self.waiting[arule['cookie']] = {'add': add, 'cmd': cmd, 'id': m[1], 'rule': m[2], 'arule': m[3]}
-        self.logger.info("Sending to ACLD: %s", cmd)
-        self.sock.sendall(cmd+"\r\n")
+        self.logger.info("Sending to ACLD: %s", ", ".join(sendlist))
+        self.sock.sendall("\r\n".join(sendlist)+"\r\n")
 
     def rule_event(self, event, id, arule, rule, msg):
         arule = self.record_to_record("acldrule", arule)
