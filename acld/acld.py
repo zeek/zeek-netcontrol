@@ -221,7 +221,7 @@ class Listen:
         cmd = arule['command'] + " " + str(arule['cookie']) + " " + arule['arg'] + " -"
         sendlist = [cmd, self.ident]
         if 'comment' in arule and arule['comment'] != None and len(arule['comment']) > 0:
-            sendlist.append(cmd)
+            sendlist.append(arule['comment'])
         sendlist.append(".")
 
         self.waiting[arule['cookie']] = {'add': add, 'cmd': cmd, 'id': m[1], 'rule': m[2], 'arule': m[3]}
