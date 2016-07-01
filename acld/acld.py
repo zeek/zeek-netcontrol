@@ -18,11 +18,16 @@ from pybroker import *
 from select import select
 
 def parseArgs():
+    defaultuser = os.getlogin()
+    defaulthost = socket.gethostname()
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--listen', default="127.0.0.1", help="Address to listen on for connections. Default: 127.0.0.1")
     parser.add_argument('--port', default=9999, help="Port to listen on for connections. Default: 9999")
     parser.add_argument('--acld_host', default="127.0.0.1", help="ACLD host to connect to. Default: 127.0.0.1")
     parser.add_argument('--acld_port', default=11775, help="ACLD port to connect to. Default: 11775")
+    parser.add_argument('--log-user', default=defaultuser, help='user name provided to acld (default: %(default)s)')
+    parser.add_argument('--log-host', default=defaulthost, help='host name provided to acld (default: %(default)s)')
     parser.add_argument('--topic', default="bro/event/pacf", help="Topic to subscribe to. Default: bro/event/pacf")
     parser.add_argument('--debug', const=logging.DEBUG, default=logging.INFO, action='store_const', help="Enable debug output")
 
@@ -30,7 +35,7 @@ def parseArgs():
     return args
 
 class Listen:
-    def __init__(self, queue, host, port, acld_host, acld_port):
+    def __init__(self, queue, host, port, acld_host, acld_port, log_user, log_host):
         self.logger = logging.getLogger("brokerlisten")
 
         self.queuename = queue
@@ -38,6 +43,11 @@ class Listen:
         self.epl.listen(port, host)
         self.icsq = self.epl.incoming_connection_status()
         self.mql = message_queue(self.queuename, self.epl)
+
+        self.acld_host = acld_host
+        self.acld_port = acld_port
+
+	self.ident = '{%s@%s}' % (log_user, log_host)
 
         self.sock = socket.socket()
         self.sock.connect((acld_host, acld_port))
@@ -119,6 +129,8 @@ class Listen:
 
             if "-failed" in cmd:
                 self.rule_event("error", msg['id'], msg['arule'], msg['rule'], comment)
+            elif re.search("Note: .* is already ", comment):
+                self.rule_event("exists", msg['id'], msg['arule'], msg['rule'], comment)
             else:
                 type = "added"
                 if msg['add'] == False:
@@ -134,10 +146,18 @@ class Listen:
         try:
             data = self.sock.recv(4096)
             if len(data) == 0:
-                self.logger.warning("Disconnected from acld, trying to reconnect")
-                self.sock = socket.socket()
-                self.sock.connect((acld_host, acld_port))
-                fcntl.fcntl(self.sock, fcntl.F_SETFL, os.O_NONBLOCK)
+                while 1==1:
+                    self.logger.warning("Disconnected from acld, trying to reconnect")
+                    try:
+                        self.sock.close()
+                        self.sock = socket.socket()
+                        self.sock.connect((self.acld_host, self.acld_port))
+                        fcntl.fcntl(self.sock, fcntl.F_SETFL, os.O_NONBLOCK)
+                        break
+                    except socket.error as msg:
+                        self.logger.error(msg)
+                        self.logger.info("Retrying connection in 5 seconds")
+                        time.sleep(5)
             self.buffer += data
         except socket.error, e:
             err = e.args[0]
@@ -181,6 +201,8 @@ class Listen:
             pass
         elif event_name == "NetControl::acld_rule_error":
             pass
+        elif event_name == "NetControl::acld_rule_exists":
+            pass
         else:
             self.logger.error("Unknown event %s", event_name)
             return
@@ -196,13 +218,15 @@ class Listen:
 
         self.logger.info("Got event %s. id=%d, arule: %s", name, id, arule)
 
-        cmd = arule['command'] + " " + str(arule['cookie']) + " " + arule['arg']
+        cmd = arule['command'] + " " + str(arule['cookie']) + " " + arule['arg'] + " -"
+        sendlist = [cmd, self.ident]
         if 'comment' in arule and arule['comment'] != None and len(arule['comment']) > 0:
-            cmd += " -\r\n"+arule['comment']+"\r\n."
+            sendlist.append(arule['comment'])
+        sendlist.append(".")
 
         self.waiting[arule['cookie']] = {'add': add, 'cmd': cmd, 'id': m[1], 'rule': m[2], 'arule': m[3]}
-        self.logger.info("Sending to ACLD: %s", cmd)
-        self.sock.sendall(cmd+"\r\n")
+        self.logger.info("Sending to ACLD: %s", ", ".join(sendlist))
+        self.sock.sendall("\r\n".join(sendlist)+"\r\n")
 
     def rule_event(self, event, id, arule, rule, msg):
         arule = self.record_to_record("acldrule", arule)
@@ -282,6 +306,6 @@ args = parseArgs()
 logging.basicConfig(level=args.debug,
         format='%(created).6f:%(name)s:%(levelname)s:%(message)s')
 logging.info("Starting acld.py...")
-brocon = Listen(args.topic, args.listen, int(args.port), args.acld_host, (args.acld_port))
+brocon = Listen(args.topic, args.listen, int(args.port), args.acld_host, int(args.acld_port), args.log_user, args.log_host)
 brocon.listen_loop()
 

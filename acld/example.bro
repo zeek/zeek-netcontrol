@@ -14,11 +14,11 @@ event NetControl::init_done()
 	print "NeControl is starting operations";
 	}
 
-event BrokerComm::outgoing_connection_established(peer_address: string,
+event Broker::outgoing_connection_established(peer_address: string,
                                             peer_port: port,
                                             peer_name: string)
 	{
-	print "BrokerComm::outgoing_connection_established", peer_address, peer_port;
+	print "Broker::outgoing_connection_established", peer_address, peer_port;
 	}
 
 event NetControl::rule_added(r: NetControl::Rule, p: NetControl::PluginState, msg: string)
