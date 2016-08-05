@@ -16,6 +16,7 @@ import sys
 
 from pybroker import *
 from select import select
+from logging.handlers import TimedRotatingFileHandler
 
 def parseArgs():
     defaultuser = os.getlogin()
@@ -30,6 +31,8 @@ def parseArgs():
     parser.add_argument('--log-host', default=defaulthost, help='host name provided to acld (default: %(default)s)')
     parser.add_argument('--topic', default="bro/event/pacf", help="Topic to subscribe to. Default: bro/event/pacf")
     parser.add_argument('--debug', const=logging.DEBUG, default=logging.INFO, action='store_const', help="Enable debug output")
+    parser.add_argument('--logfile', help="Filename of logfile. If not given, logs to stdout")
+    parser.add_argument('--rotate', help="If logging to file and --rotate is specified, log will rotate at midnight", action="store_true")
 
     args = parser.parse_args()
     return args
@@ -303,8 +306,24 @@ class Listen:
             return None
 
 args = parseArgs()
-logging.basicConfig(level=args.debug,
-        format='%(created).6f:%(name)s:%(levelname)s:%(message)s')
+logger = logging.getLogger('')
+logger.setLevel(args.debug)
+
+handler = None
+
+if args.logfile:
+    if args.rotate:
+        handler = TimedRotatingFileHandler(args.logfile, 'midnight')
+    else:
+        handler = logging.FileHandler(args.logfile);
+else:
+    handler = logging.StreamHandler(sys.stdout)
+
+formatter = logging.Formatter('%(created).6f:%(name)s:%(levelname)s:%(message)s')
+handler.setFormatter(formatter)
+
+logger.addHandler(handler)
+
 logging.info("Starting acld.py...")
 brocon = Listen(args.topic, args.listen, int(args.port), args.acld_host, int(args.acld_port), args.log_user, args.log_host)
 brocon.listen_loop()
