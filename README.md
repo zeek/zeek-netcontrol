@@ -21,7 +21,7 @@ of Bro with commands similar to this:
 To allow python to find the installed python broker bindings, it might be necessary
 to adjust the PYTHONPATH variable similar to this:
 
-	export PYTHONPATH=[install prefix]/lib/python:[this directory]
+	export PYTHONPATH=[install prefix]/lib/broctl:[this directory]
 
 after that, you should be able to launch the provided scripts.
 

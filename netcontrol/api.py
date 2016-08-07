@@ -156,9 +156,12 @@ class Endpoint:
             return NetControlResponse(ResponseType.Error, errormsg="Unknown event"+event_name)
 
     def _add_remove_rule(self, m, rtype):
-        if ( len(m) != 3 ) or ( m[0].which() != data.tag_string ) or ( m[1].which() != data.tag_count ) or ( m[2].which() != data.tag_record ) :
+        if  ( (rtype == ResponseType.AddRule) and ( len(m) != 3 ) ) or ( (rtype == ResponseType.RemoveRule) and ( len(m) != 4 ) ):
             logger.error("wrong number of elements or type in tuple for add/remove_rule event")
             return NetControlResponse(ResponseType.Error, errormsg="wrong number of elements or type in tuple for add/remove_rule event")
+        if ( m[0].which() != data.tag_string ) or ( m[1].which() != data.tag_count ) or ( m[2].which() != data.tag_record ) :
+            logger.error("wrong types of elements or type in tuple for add/remove_rule event")
+            return NetControlResponse(ResponseType.Error, errormsg="wrong types of elements or type in tuple for add/remove_rule event")
 
         name = m[0].as_string()
         id = m[1].as_count()
