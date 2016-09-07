@@ -433,7 +433,7 @@ class BroController(app_manager.RyuApp):
         ofp = dp.ofproto
         match = msg.match
 
-        if dp.id not in self.dpids
+        if dp.id not in self.dpids:
             self.logger.error("Flow remove for unknown DPID %d", dp.id)
             return
 

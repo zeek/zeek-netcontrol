@@ -47,17 +47,17 @@ event NetControl::rule_timeout(r: NetControl::Rule, i: NetControl::FlowInfo, p: 
 	print "Rule timeout", r$id, i;
 	}
 
-event OpenFlow::flow_mod_success(match: OpenFlow::ofp_match, flow_mod: OpenFlow::ofp_flow_mod, msg: string)
+event OpenFlow::flow_mod_success(name: string, match: OpenFlow::ofp_match, flow_mod: OpenFlow::ofp_flow_mod, msg: string)
 	{
 	#print "Flow mod success";
 	}
 
-event OpenFlow::flow_mod_failure(match: OpenFlow::ofp_match, flow_mod: OpenFlow::ofp_flow_mod, msg: string)
+event OpenFlow::flow_mod_failure(name: string, match: OpenFlow::ofp_match, flow_mod: OpenFlow::ofp_flow_mod, msg: string)
 	{
 	print "Flow mod failure", flow_mod$cookie, msg;
 	}
 
-event OpenFlow::flow_removed(match: OpenFlow::ofp_match, cookie: count, priority: count, reason: count, duration_sec: count, idle_timeout: count, packet_count: count, byte_count: count)
+event OpenFlow::flow_removed(name: string, match: OpenFlow::ofp_match, cookie: count, priority: count, reason: count, duration_sec: count, idle_timeout: count, packet_count: count, byte_count: count)
 	{
 	print "Flow removed", match;
 	}
