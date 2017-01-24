@@ -131,7 +131,10 @@ class Listen:
             del self.waiting[cookie]
 
             if "-failed" in cmd:
-                self.rule_event("error", msg['id'], msg['arule'], msg['rule'], comment)
+                if re.search(".* is on the whitelist .*", comment):
+                    self.rule_event("exists", msg['id'], msg['arule'], msg['rule'], comment)
+                else:
+                    self.rule_event("error", msg['id'], msg['arule'], msg['rule'], comment)
             elif re.search("Note: .* is already ", comment):
                 self.rule_event("exists", msg['id'], msg['arule'], msg['rule'], comment)
             else:
