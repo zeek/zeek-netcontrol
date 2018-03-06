@@ -18,11 +18,9 @@ event NetControl::init() &priority=2
 	NetControl::activate(pacf_of, 0);
 	}
 
-event Broker::outgoing_connection_established(peer_address: string,
-                                            peer_port: port,
-                                            peer_name: string)
+event Broker::peer_added(endpoint: Broker::EndpointInfo, msg: string)
 	{
-	print "Broker::outgoing_connection_established", peer_address, peer_port;
+	print "Broker peer added", endpoint$network;
 	}
 
 event NetControl::init_done()

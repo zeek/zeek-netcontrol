@@ -5,7 +5,7 @@ const broker_port: port = 9977/tcp &redef;
 
 event NetControl::init()
 	{
-	local netcontrol_broker = NetControl::create_broker(NetControl::BrokerConfig($host=127.0.0.1, $bport=broker_port, $topic="bro/event/netcontrol-example"), F);
+	local netcontrol_broker = NetControl::create_broker(NetControl::BrokerConfig($host=127.0.0.1, $bport=broker_port, $topic="bro/netcontrol-example"), F);
 	NetControl::activate(netcontrol_broker, 0);
 	}
 
@@ -14,11 +14,9 @@ event NetControl::init_done()
 	print "NeControl is starting operations";
 	}
 
-event Broker::outgoing_connection_established(peer_address: string,
-                                            peer_port: port,
-                                            peer_name: string)
+event Broker::peer_added(endpoint: Broker::EndpointInfo, msg: string)
 	{
-	print "Broker::outgoing_connection_established", peer_address, peer_port;
+	print "Broker peer added", endpoint$network;
 	}
 
 event NetControl::rule_added(r: NetControl::Rule, p: NetControl::PluginState, msg: string)
