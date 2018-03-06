@@ -35,7 +35,7 @@ supported_ofctl = {
     ofproto_v1_3.OFP_VERSION: ofctl_v1_3,
 }
 
-queuename = "bro/event/openflow"
+queuename = "bro/openflow"
 
 # for monkey-patching.
 # Barf.

@@ -13,7 +13,7 @@ const switch_bro_port: count = 19 &redef;
 
 event NetControl::init() &priority=2
 	{
-	of_controller = OpenFlow::broker_new("of", 127.0.0.1, broker_port, "bro/event/openflow", switch_dpid);
+	of_controller = OpenFlow::broker_new("of", 127.0.0.1, broker_port, "bro/openflow", switch_dpid);
 	local pacf_of = NetControl::create_openflow(of_controller, NetControl::OfConfig($monitor=T, $forward=F, $priority_offset=+5));
 	NetControl::activate(pacf_of, 0);
 	}
