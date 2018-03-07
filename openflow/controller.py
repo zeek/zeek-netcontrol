@@ -26,7 +26,7 @@ from ryu.lib import ofctl_v1_2
 from ryu.lib import ofctl_v1_3
 from ryu.lib import hub
 
-from pybroker import *
+import broker
 from select import select
 
 supported_ofctl = {
@@ -81,12 +81,13 @@ class BroController(app_manager.RyuApp):
         # it for the returning flow_removed events
         self.dpids = {}
 
-        self.epl = endpoint("listener")
+        self.epl = broker.Endpoint()
 
     def start(self):
-        self.epl.listen(9999, "127.0.0.1")
-        self.icsq = self.epl.incoming_connection_status()
-        self.mql = message_queue(queuename, self.epl)
+        self.epl.listen("127.0.0.1", 9999)
+        self.status_subscriber = self.epl.make_status_subscriber(True)
+        self.subscriber = self.epl.make_subscriber(self.queuename)
+
         self.threads.append(hub.spawn(self._broker_loop))
         self.logger.info("Started broker communication...")
         self.threads.append(hub.spawn(self._event_loop))
@@ -101,20 +102,25 @@ class BroController(app_manager.RyuApp):
 
         while 1==1:
             self.logger.info("Waiting for broker message")
-            readable, writable, exceptional = select([self.icsq.fd(), self.mql.fd()],[],[])
-            msgs = None
-            if ( self.icsq.fd() in readable ):
-                msgs = self.icsq.want_pop()
-            elif ( self.mql.fd() in readable ):
-                msgs = self.mql.want_pop()
+            readable, writable, exceptional = select(
+                    [self.status_subscriber.fd(), self.subscriber.fd()],
+                    [],[])
 
-            for m in msgs:
+            if ( self.status_subscriber.fd() in readable ):
+                self.logger.info("Got broker status message")
+                msg = self.status_subscriber.get()
+                self.handle_broker_message(msg)
+            elif ( self.subscriber.fd() in readable ):
                 self.logger.info("Got broker message")
-                self.handle_broker_message(m)
+                msg = self.subscriber.get()
+                self.handle_broker_message(msg)
 
     def handle_broker_message(self, m):
-        if ( type(m).__name__ == "incoming_connection_status" ):
-            self.logger.info("Incoming connection established")
+        if isinstance(m, broker.Status):
+            if m.code() == broker.SC.PeerAdded:
+                self.logger.info("Incoming connection established.")
+                return
+
             return
 
         if ( type(m).__name__ != "tuple" ):
@@ -125,12 +131,14 @@ class BroController(app_manager.RyuApp):
             self.logger.error("Tuple without content?")
             return
 
-        event_name = str(m[0])
+        (topic, event) = m
+        ev = broker.bro.Event(event)
+        event_name = ev.name()
 
         if ( event_name == "OpenFlow::broker_flow_clear" ):
-            self.event_flow_clear(m)
+            self.event_flow_clear(ev.args())
         elif ( event_name == "OpenFlow::broker_flow_mod" ):
-            self.event_flow_mod(m)
+            self.event_flow_mod(ev.args())
         elif event_name == "OpenFlow::flow_mod_success":
             pass
         elif event_name == "OpenFlow::flow_mod_failure":
@@ -142,15 +150,15 @@ class BroController(app_manager.RyuApp):
             return
 
     def event_flow_clear(self, m):
-        if ( len(m) != 3 ) or ( m[1].which() != data.tag_string ) or ( m[2].which() != data.tag_count ):
+        if ( len(m) != 2 ) or ( not isinstance(m[0], str) ) or ( not isinstance(m[1], broker.Count) ):
             self.logger.error("wrong number of elements or type in tuple for event_flow_clear")
             return
 
         # since this is really only a  convenience function we should return it and just do the
         # flow-mod from bro ourselves
-        name = m[1].as_string()
+        name = m[0]
 
-        dpid = m[2].as_count()
+        dpid = m[1].value
         self.logger.info("flow_clear for %s %d", name, dpid)
 
         dp = ryu.app.ofctl.api.get_datapath(self, int(dpid))
@@ -175,33 +183,35 @@ class BroController(app_manager.RyuApp):
         ryu.app.ofctl.api.send_msg(self, msg)
 
     def send_error(self, name, match, flow_mod, msg):
-        m = message([data("OpenFlow::flow_mod_failure")])
+        args = [name, match, flow_mod, msg]
+        ev = broker.bro.Event("OpenFlow::flow_mod_failure", args)
         m.push_back(data(name))
         m.push_back(match)
         m.push_back(flow_mod)
         m.push_back(data(msg))
-        self.epl.send(queuename, m)
+        self.epl.publish(queuename, ev)
 
     def send_success(self, name, match, flow_mod, msg):
-        m = message([data("OpenFlow::flow_mod_success"), data(name), match, flow_mod, data(msg)])
-        self.epl.send(queuename, m)
+        args = [name, match, flow_mod, msg]
+        ev = broker.bro.Event("OpenFlow::flow_mod_success", args)
+        self.epl.publish(queuename, ev)
 
     def event_flow_mod(self, m):
-        if ( len(m) != 5 ) or ( m[1].which() != data.tag_string ) or ( m[2].which() != data.tag_count ) or ( m[3].which() != data.tag_record ) or ( m[4].which() != data.tag_record ):
+        if ( len(m) != 4 ) or ( not isinstance(m[0], str) ) or ( not isinstance(m[1], broker.Count) ) or ( not isinstance(m[2], list) ) or ( not isinstance(m[3], list) ):
             self.logger.error("wrong number of elements or type in tuple for event_flow_mod")
             return
 
-        name = m[1].as_string()
+        name = m[0]
 
-        dpid = m[2].as_count()
-        match = self.parse_ofp_match(m[3])
-        flow_mod = self.parse_ofp_flow_mod(m[4])
+        dpid = m[1].value
+        match = self.parse_ofp_match(m[2])
+        flow_mod = self.parse_ofp_flow_mod(m[3])
 
         dp = ryu.app.ofctl.api.get_datapath(self, int(dpid))
 
         if dp is None:
             self.logger.error("name %s dpid %d not found for flow_mod", name, dpid)
-            self.send_error(m[3], m[4], "dpid not found")
+            self.send_error(m[2], m[3], "dpid not found")
             return
 
         self.dpids[dp.id] = name
@@ -373,14 +383,14 @@ class BroController(app_manager.RyuApp):
 
         if cmd is None:
             self.logger.error("command %s could not be parsed", cmdstr)
-            self.send_error(m[3], m[4], "cmd not recognized")
+            self.send_error(m[2], m[3], "cmd not recognized")
             return
 
         _ofp_version = dp.ofproto.OFP_VERSION
         _ofctl = supported_ofctl.get(_ofp_version, None)
         if _ofctl is None:
             self.logger.error("unsupported openflow protocol")
-            self.send_error(m[3], m[4], "unsupported openflow protocol")
+            self.send_error(m[2], m[3], "unsupported openflow protocol")
             return
 
         dp.brosend = 1 # give it to us...
@@ -401,10 +411,10 @@ class BroController(app_manager.RyuApp):
 
         try:
             ryu.app.ofctl.api.send_msg(self, msg)
-            self.send_success(name, m[3], m[4], "")
+            self.send_success(name, m[2], m[3], "")
         except ryu.app.ofctl.exception.OFError as err:
             self.logger.error("flow_mod execution error %s", err)
-            self.send_error(name, m[3], m[4], str(err))
+            self.send_error(name, m[2], m[3], str(err))
 
     def parse_ofp_match(self, m):
         match = ['in_port', 'dl_src', 'dl_dst', 'dl_vlan', 'dl_vlan_pcp', 'dl_type', 'nw_tos', 'nw_proto', 'nw_src', 'nw_dst', 'tp_src', 'tp_dst']
@@ -419,8 +429,8 @@ class BroController(app_manager.RyuApp):
         # ok, now we have to get the actions, which are after flags. This is kind of cheating, but... whatever :)
         match_actions = ['out_ports', 'vlan_vid', 'vlan_pcp', 'vlan_strip', 'dl_src', 'dl_dst', 'nw_tos', 'nw_src', 'nw_dst', 'tp_src', 'tp_dst']
 
-        rm = m.as_record()
-        rl = rm.fields()[9]
+        rm = m
+        rl = rm[9]
         recaction = self.record_to_record(match_actions, rl.get())
         rec['actions'] = recaction
 
@@ -493,8 +503,17 @@ class BroController(app_manager.RyuApp):
         else:
             match_vec.push_back(field())
 
-        m = message([data("OpenFlow::flow_removed"), data(self.dpids[dp.id]), data(record(match_vec)), data(msg.cookie), data(msg.priority), data(msg.reason), data(msg.duration_sec), data(msg.idle_timeout), data(msg.packet_count), data(msg.byte_count)])
-        self.epl.send(queuename, m)
+        args = [self.dpids[dp.id],
+                match_vec,
+                broker.Count(msg.cookie),
+                broker.Count(msg.priority),
+                broker.Count(msg.reason),
+                broker.Count(msg.duration_sec),
+                broker.Count(msg.idle_timeout),
+                broker.Count(msg.packet_count),
+                broker.Count(msg.byte_count)]
+        ev = broker.bro.Event("OpenFlow::flow_removed", args)
+        self.epl.publish(queuename, ev)
 
 
     def vec_add_field(self, match_vec, match , el):
@@ -520,59 +539,65 @@ class BroController(app_manager.RyuApp):
             return None
 
     def record_to_record(self, match, m):
-
         #if len(match) != len(m):
         #    self.logger.error("wrong number of elements in parse_ofp_match")
         #    return
 
-        if m.which() != data.tag_record:
+        if not isinstance(m, list):
             self.logger.error("Got non record element")
 
-        rec = m.as_record()
+        rec = m
 
         dict = {}
         for i in range(0, len(match)):
-            if rec.fields()[i].valid() == False:
+            if rec[i] is None:
                 #dict[match[i]] = None # most of the functions expect this to be undefined, not none. We oblige.
                 continue
 
-            dict[match[i]] = self.convert_element(rec.fields()[i].get())
+            dict[match[i]] = self.convert_element(rec[i])
 
         return dict
 
     def convert_element(self, el):
-        if ( el.which() == data.tag_boolean ):
-            return el.as_bool()
-        if ( el.which() == data.tag_count ):
-            return el.as_count()
-        elif ( el.which() == data.tag_integer ):
-            return el.as_int()
-        elif ( el.which() == data.tag_real ):
-            return el.as_real()
-        elif ( el.which() == data.tag_string ):
-            return el.as_string()
-        elif ( el.which() == data.tag_address ):
-            return str(el.as_address())
-        elif ( el.which() == data.tag_subnet ):
-            return str(el.as_subnet())
-        elif ( el.which() == data.tag_port ):
-            return el.as_port().number()
-        elif ( el.which() == data.tag_time ):
-            return el.as_time()
-        elif ( el.which() == data.tag_duration ):
-            return el.as_duration().value
-        elif ( el.which() == data.tag_enum_value ):
-            tmp = el.as_enum().name
+        if isinstance(el, broker.Count):
+            return el.value
+
+        if isinstance(el, ipaddress.IPv4Address):
+            return str(el);
+
+        if isinstance(el, ipaddress.IPv6Address):
+            return str(el);
+
+        if isinstance(el, ipaddress.IPv4Network):
+            return str(el);
+
+        if isinstance(el, ipaddress.IPv6Network):
+            return str(el);
+
+        if isinstance(el, broker.Port):
+            p = str(el)
+            ex = re.compile('([0-9]+)(.*)')
+            res = ex.match(p)
+            return (res.group(1), res.group(2))
+
+        if isinstance(el, broker.Enum):
+            tmp = el.name
             return re.sub(r'.*::', r'', tmp)
-        elif ( el.which() == data.tag_vector ):
-            tmp = el.as_vector()
-            elements = []
-            for sel in tmp:
-                elements.append(self.convert_element(sel))
-            return elements
 
-        else:
-            self.logger.error("Unsupported type %d", el.which() )
-            return None
+        if isinstance(el, list):
+            return [convertElement(ell) for ell in el];
 
+        if isinstance(el, datetime.datetime):
+            return el
 
+        if isinstance(el, datetime.timedelta):
+            return el
+
+        if isinstance(el, int):
+            return el
+
+        if isinstance(el, str):
+            return el
+
+        logger.error("Unsupported type %s", type(el) )
+        return el;

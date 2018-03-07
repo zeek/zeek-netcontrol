@@ -5,16 +5,17 @@
 import logging
 import time
 import re
-import thread
 import string
-import threading
 import fcntl, os
 import socket
 import errno
 import argparse
 import sys
+import ipaddress
+import datetime
 
-from pybroker import *
+import broker
+import broker.bro
 from select import select
 from logging.handlers import TimedRotatingFileHandler
 
@@ -42,15 +43,15 @@ class Listen:
         self.logger = logging.getLogger("brokerlisten")
 
         self.queuename = queue
-        self.epl = endpoint("listener")
-        self.epl.listen(port, host)
-        self.icsq = self.epl.incoming_connection_status()
-        self.mql = message_queue(self.queuename, self.epl)
+        self.epl = broker.Endpoint()
+        self.epl.listen(host, port)
+        self.status_subscriber = self.epl.make_status_subscriber(True)
+        self.subscriber = self.epl.make_subscriber(self.queuename)
 
         self.acld_host = acld_host
         self.acld_port = acld_port
 
-	self.ident = '{%s@%s}' % (log_user, log_host)
+        self.ident = '{%s@%s}' % (log_user, log_host)
 
         self.sock = socket.socket()
         self.sock.connect((acld_host, acld_port))
@@ -70,12 +71,19 @@ class Listen:
 
         while 1==1:
             self.logger.debug("Waiting for broker message")
-            readable, writable, exceptional = select([self.icsq.fd(), self.mql.fd(), self.sock],[],[])
-            msgs = None
-            if ( self.icsq.fd() in readable ):
-                msgs = self.icsq.want_pop()
-            elif ( self.mql.fd() in readable ):
-                msgs = self.mql.want_pop()
+            readable, writable, exceptional = select(
+                    [self.status_subscriber.fd(),
+                     self.subscriber.fd(), self.sock],
+                    [], [])
+
+            if ( self.status_subscriber.fd() in readable ):
+                self.logger.debug("Got broker status message")
+                msg = self.status_subscriber.get()
+                self._handle_broker_message(msg)
+            elif ( self.subscriber.fd() in readable ):
+                self.logger.debug("Got broker message")
+                msg = self.subscriber.get()
+                self._handle_broker_message(msg)
             elif ( self.sock in readable ):
                 line = self.read_acld()
                 while line != None:
@@ -84,9 +92,6 @@ class Listen:
                     line = self.read_acld()
                 continue
 
-            for m in msgs:
-                self.logger.debug("Got broker message")
-                self._handle_broker_message(m)
 
     def parse_acld(self, line):
         line = line.rstrip("\r")
@@ -162,7 +167,7 @@ class Listen:
                         self.logger.info("Retrying connection in 5 seconds")
                         time.sleep(5)
             self.buffer += data
-        except socket.error, e:
+        except socket.error as e:
             err = e.args[0]
             if err == errno.EAGAIN or err == errno.EWOULDBLOCK:
                 # socket not ready yet, just continue and see if something
@@ -180,8 +185,11 @@ class Listen:
             return None
 
     def _handle_broker_message(self, m):
-        if type(m).__name__ == "incoming_connection_status":
-            self.logger.info("Incoming connection established.")
+        if isinstance(m, broker.Status):
+            if m.code() == broker.SC.PeerAdded:
+                self.logger.info("Incoming connection established.")
+                return
+
             return
 
         if type(m).__name__ != "tuple":
@@ -192,12 +200,14 @@ class Listen:
             self.logger.error("Tuple without content?")
             return
 
-        event_name = str(m[0])
+        (topic, event) = m
+        ev = broker.bro.Event(event)
+        event_name = ev.name()
 
         if event_name == "NetControl::acld_add_rule":
-            self.add_remove_rule(m, True)
+            self.add_remove_rule(event_name, ev.args(), True)
         elif event_name == "NetControl::acld_remove_rule":
-            self.add_remove_rule(m, False)
+            self.add_remove_rule(event_name, ev.args(), False)
         elif event_name == "NetControl::acld_rule_added":
             pass
         elif event_name == "NetControl::acld_rule_removed":
@@ -210,14 +220,13 @@ class Listen:
             self.logger.error("Unknown event %s", event_name)
             return
 
-    def add_remove_rule(self, m, add):
-        if ( len(m) != 4 ) or ( m[1].which() != data.tag_count ) or ( m[2].which() != data.tag_record ) or ( m[3].which() != data.tag_record ):
+    def add_remove_rule(self, name, m, add):
+        if ( len(m) != 3 ) or ( not isinstance(m[0], broker.Count) ) or (not isinstance(m[1], list) ) or ( not isinstance(m[2], list) ):
             self.logger.error("wrong number of elements or type in tuple for acld_add|remove_rule")
             return
 
-        name = m[0].as_string()
-        id = m[1].as_count()
-        arule = self.record_to_record("acldrule", m[3])
+        id = m[0].value
+        arule = self.record_to_record("acldrule", m[2])
 
         self.logger.info("Got event %s. id=%d, arule: %s", name, id, arule)
 
@@ -227,25 +236,23 @@ class Listen:
             sendlist.append(arule['comment'])
         sendlist.append(".")
 
-        self.waiting[arule['cookie']] = {'add': add, 'cmd': cmd, 'id': m[1], 'rule': m[2], 'arule': m[3]}
+        self.waiting[arule['cookie']] = {'add': add, 'cmd': cmd, 'id': m[0], 'rule': m[1], 'arule': m[2]}
         self.logger.info("Sending to ACLD: %s", ", ".join(sendlist))
         self.sock.sendall("\r\n".join(sendlist)+"\r\n")
 
     def rule_event(self, event, id, arule, rule, msg):
         arule = self.record_to_record("acldrule", arule)
-        self.logger.info("Sending to Bro: NetControl::acld_rule_%s id=%d, arule=%s, msg=%s", event, id.as_count(), arule, msg)
-        m = message([data("NetControl::acld_rule_"+event)])
-        m.push_back(id)
-        m.push_back(rule)
-        m.push_back(data(msg))
-        self.epl.send(self.queuename, m)
+        self.logger.info("Sending to Bro: NetControl::acld_rule_%s id=%d, arule=%s, msg=%s", event, id, arule, msg)
+
+        args = [broker.Count(id), rule, msg]
+        ev = broker.bro.Event("NetControl::acld_rule_"+event, args)
+        self.epl.publish(self.queuename, ev)
 
     def record_to_record(self, name, m):
-
-        if m.which() != data.tag_record:
+        if not isinstance(m, list):
             self.logger.error("Got non record element")
 
-        rec = m.as_record()
+        rec = m
 
         elements = None
         if name == "acldrule":
@@ -256,54 +263,60 @@ class Listen:
 
         dict = {}
         for i in range(0, len(elements)):
-            if rec.fields()[i].valid() == False:
+            if rec[i] is None:
                 dict[elements[i]] = None
                 continue
-            elif rec.fields()[i].get().which() == data.tag_record:
-                dict[elements[i]] = self.record_to_record(name+"->"+elements[i], rec.fields()[i].get())
+            elif isinstance(rec[i], list):
+                dict[elements[i]] = self.record_to_record(name+"->"+elements[i], rec[i])
                 continue
 
-            dict[elements[i]] = self.convert_element(rec.fields()[i].get())
+            dict[elements[i]] = self.convert_element(rec[i])
 
         return dict
 
     def convert_element(self, el):
-        if ( el.which() == data.tag_boolean ):
-            return el.as_bool()
-        if ( el.which() == data.tag_count ):
-            return el.as_count()
-        elif ( el.which() == data.tag_integer ):
-            return el.as_int()
-        elif ( el.which() == data.tag_real ):
-            return el.as_real()
-        elif ( el.which() == data.tag_string ):
-            return el.as_string()
-        elif ( el.which() == data.tag_address ):
-            return str(el.as_address())
-        elif ( el.which() == data.tag_subnet ):
-            return str(el.as_subnet())
-        elif ( el.which() == data.tag_port ):
-            p = str(el.as_port())
+        if isinstance(el, broker.Count):
+            return el.value
+
+        if isinstance(el, ipaddress.IPv4Address):
+            return str(el);
+
+        if isinstance(el, ipaddress.IPv6Address):
+            return str(el);
+
+        if isinstance(el, ipaddress.IPv4Network):
+            return str(el);
+
+        if isinstance(el, ipaddress.IPv6Network):
+            return str(el);
+
+        if isinstance(el, broker.Port):
+            p = str(el)
             ex = re.compile('([0-9]+)(.*)')
             res = ex.match(p)
             return (res.group(1), res.group(2))
-        elif ( el.which() == data.tag_time ):
-            return el.as_time()
-        elif ( el.which() == data.tag_duration ):
-            return el.as_duration().value
-        elif ( el.which() == data.tag_enum_value ):
-            tmp = el.as_enum().name
-            return re.sub(r'.*::', r'', tmp)
-        elif ( el.which() == data.tag_vector ):
-            tmp = el.as_vector()
-            elements = []
-            for sel in tmp:
-                elements.append(self.convert_element(sel))
-            return elements
 
-        else:
-            self.logger.error("Unsupported type %d", el.which() )
-            return None
+        if isinstance(el, broker.Enum):
+            tmp = el.name
+            return re.sub(r'.*::', r'', tmp)
+
+        if isinstance(el, list):
+            return [convertElement(ell) for ell in el];
+
+        if isinstance(el, datetime.datetime):
+            return el
+
+        if isinstance(el, datetime.timedelta):
+            return el
+
+        if isinstance(el, int):
+            return el
+
+        if isinstance(el, str):
+            return el
+
+        logger.error("Unsupported type %s", type(el) )
+        return el;
 
 args = parseArgs()
 logger = logging.getLogger('')
