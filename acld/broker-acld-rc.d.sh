@@ -1,5 +1,5 @@
 #!/bin/sh
-# @(#) $Id: broker-acld,v 1.7 2018/04/24 20:20:12 leres Exp $ (LBL)
+# @(#) $Id: broker-acld,v 1.8 2018/04/25 17:26:04 leres Exp $ (LBL)
 #
 
 # PROVIDE: broker-acld
@@ -18,10 +18,6 @@
 #
 # broker_acld_hosts hosts can override the default port, e.g. 127.0.0.1,1234
 #
-
-command=/usr/sbin/daemon
-command_interpreter=python
-procname=${broker_acld_program:-${netcontrol}/acld/acld.py}
 
 . /etc/rc.subr
 
