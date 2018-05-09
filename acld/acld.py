@@ -2,44 +2,83 @@
 
 # Acld interface for the Network Control Framework of Bro, using Broker.
 
-import logging
-import time
-import re
-import string
-import fcntl, os
-import socket
-import errno
+from __future__ import print_function
+
 import argparse
+import errno
+import fcntl, os
+import logging
+import random
+import re
+import socket
+import string
 import sys
 import ipaddress
 import datetime
+import time
 
 import broker
 import broker.bro
 from select import select
 from logging.handlers import TimedRotatingFileHandler
 
+MAX16INT = 2**16 - 1
+
 def parseArgs():
     defaultuser = os.getlogin()
     defaulthost = socket.gethostname()
+    defaultacldhost = '127.0.0.1'
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--listen', default="127.0.0.1", help="Address to listen on for connections. Default: 127.0.0.1")
-    parser.add_argument('--port', default=9999, help="Port to listen on for connections. Default: 9999")
-    parser.add_argument('--acld_host', default="127.0.0.1", help="ACLD host to connect to. Default: 127.0.0.1")
-    parser.add_argument('--acld_port', default=11775, help="ACLD port to connect to. Default: 11775")
-    parser.add_argument('--log-user', default=defaultuser, help='user name provided to acld (default: %(default)s)')
-    parser.add_argument('--log-host', default=defaulthost, help='host name provided to acld (default: %(default)s)')
-    parser.add_argument('--topic', default="bro/event/pacf", help="Topic to subscribe to. Default: bro/event/pacf")
-    parser.add_argument('--debug', const=logging.DEBUG, default=logging.INFO, action='store_const', help="Enable debug output")
-    parser.add_argument('--logfile', help="Filename of logfile. If not given, logs to stdout")
-    parser.add_argument('--rotate', help="If logging to file and --rotate is specified, log will rotate at midnight", action="store_true")
+    parser.add_argument('--listen', default="127.0.0.1",
+        help="Address to listen on for connections (default: %(default)s)")
+    parser.add_argument('--port', type=int, default=9999,
+        help="Port to listen on for connections (default: %(default)s)")
+    parser.add_argument('--acld_host', metavar='HOST', action='append',
+        help='ACLD hosts to connect to (default: %s)' % defaultacldhost)
+    parser.add_argument('--acld_port', metavar='PORT', type=int, default=11775,
+        help="ACLD port to connect to (default: %(default)s)")
+    parser.add_argument('--log-user', default=defaultuser,
+        help='user name provided to acld (default: %(default)s)')
+    parser.add_argument('--log-host', default=defaulthost,
+        help='host name provided to acld (default: %(default)s)')
+    parser.add_argument('--topic', default="bro/event/pacf",
+        help="Topic to subscribe to. (default: %(default)s)")
+    parser.add_argument('--debug', const=logging.DEBUG, action='store_const',
+        default=logging.INFO,
+        help="Enable debug output")
+    parser.add_argument('--logfile',
+        help="Filename of logfile. If not given, logs to stdout")
+    parser.add_argument('--rotate', action="store_true",
+        help="If logging to file and --rotate is specified, log will rotate at midnight")
 
     args = parser.parse_args()
+    if not args.acld_host:
+        args.acld_host = [defaultacldhost]
     return args
 
-class Listen:
-    def __init__(self, queue, host, port, acld_host, acld_port, log_user, log_host):
+def hostportpair(host, port):
+    """Host is an ip address or ip address and port,
+       port is the default port.
+       return a host-port pair"""
+    tup = host.split(',', 1)
+    if len(tup) == 2:
+        host = tup[0]
+        sport = tup[1]
+        if not sport.isdigit():
+            self.logger.error('%s: port must be numeric' % host)
+            sys.exit(-1)
+        port = int(sport)
+    if port <= 0 or port > MAX16INT:
+        self.logger.error('%s: port must be > 0 and < %d ' % (host, MAX16INT))
+        sys.exit(-1)
+    return host, port
+
+class Listen(object):
+    TIMEOUT_INITIAL = 0.25
+    TIMEOUT_MAX = 8.0
+
+    def __init__(self, queue, host, port, acld_hosts, acld_port, log_user, log_host):
         self.logger = logging.getLogger("brokerlisten")
 
         self.queuename = queue
@@ -48,16 +87,16 @@ class Listen:
         self.status_subscriber = self.epl.make_status_subscriber(True)
         self.subscriber = self.epl.make_subscriber(self.queuename)
 
-        self.acld_host = acld_host
-        self.acld_port = acld_port
+        # Create a random list of host port pairs
+        self.acld_hosts = []
+        for host in acld_hosts:
+            self.acld_hosts.append(hostportpair(host, acld_port))
+        random.shuffle(self.acld_hosts)
 
         self.ident = '{%s@%s}' % (log_user, log_host)
+        self.remote_ident = '?'
 
-        self.sock = socket.socket()
-        self.sock.connect((acld_host, acld_port))
-        fcntl.fcntl(self.sock, fcntl.F_SETFL, os.O_NONBLOCK)
-
-        # try to connect to acld
+        self.sock = None
 
         self.waiting = {}
         self.buffer = ''
@@ -65,6 +104,46 @@ class Listen:
         self.acldstring = False
         self.acldcmd = {}
 
+        # try to connect to acld
+        self.connect()
+
+    def connect(self):
+        """Round robin across multiple aclds with exponential backoff"""
+        if self.sock:
+            self.sock.close()
+            self.sock = None;
+        # No delay on first retry with multiple aclds
+        if len(self.acld_hosts) > 1:
+            timeout = 0.0
+        else:
+            timeout = self.TIMEOUT_INITIAL
+        while True:
+            self.sock = socket.socket()
+            hostpair = self.get_hostpair()
+            self.remote_ident = '[%s].%d' % (hostpair[0], hostpair[1])
+            self.logger.debug('%s Connecting' % self.remote_ident)
+            try:
+                self.sock.connect(hostpair)
+            except socket.error as e:
+                self.logger.error('%s %s' % (self.remote_ident, e.strerror))
+                time.sleep(timeout)
+                if not timeout:
+                    timeout = self.TIMEOUT_INITIAL
+                else:
+                    timeout *= 2
+                    if timeout > self.TIMEOUT_MAX:
+                        timeout = self.TIMEOUT_MAX
+                continue
+
+            fcntl.fcntl(self.sock, fcntl.F_SETFL, os.O_NONBLOCK)
+            self.logger.info('%s Connected' % self.remote_ident)
+            break
+
+    def get_hostpair(self):
+        """Round robin multiple ACLD hosts"""
+        hostport = self.acld_hosts.pop(0)
+        self.acld_hosts.append(hostport)
+        return hostport
 
     def listen_loop(self):
         self.logger.debug("Broker loop...")
@@ -128,7 +207,7 @@ class Listen:
 
         if cmd == "acld":
             # we get this when connecting
-            self.logger.info("Acld connection succesfull")
+            self.logger.info('%s acld connection succesful' % self.remote_ident)
             return
 
         if cookie in self.waiting:
@@ -136,7 +215,10 @@ class Listen:
             del self.waiting[cookie]
 
             if "-failed" in cmd:
-                self.rule_event("error", msg['id'], msg['arule'], msg['rule'], comment)
+                if re.search(".* is on the whitelist .*", comment):
+                    self.rule_event("exists", msg['id'], msg['arule'], msg['rule'], comment)
+                else:
+                    self.rule_event("error", msg['id'], msg['arule'], msg['rule'], comment)
             elif re.search("Note: .* is already ", comment):
                 self.rule_event("exists", msg['id'], msg['arule'], msg['rule'], comment)
             else:
@@ -149,23 +231,12 @@ class Listen:
             self.logger.warning("Got response to cookie %d we did not send. Ignoring", cookie)
             return
 
-
     def read_acld(self):
         try:
             data = self.sock.recv(4096)
             if len(data) == 0:
-                while 1==1:
-                    self.logger.warning("Disconnected from acld, trying to reconnect")
-                    try:
-                        self.sock.close()
-                        self.sock = socket.socket()
-                        self.sock.connect((self.acld_host, self.acld_port))
-                        fcntl.fcntl(self.sock, fcntl.F_SETFL, os.O_NONBLOCK)
-                        break
-                    except socket.error as msg:
-                        self.logger.error(msg)
-                        self.logger.info("Retrying connection in 5 seconds")
-                        time.sleep(5)
+                self.logger.warning('%s Disconnected' % self.remote_ident)
+                self.connect()
             self.buffer += data
         except socket.error as e:
             err = e.args[0]
@@ -338,6 +409,9 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 
 logging.info("Starting acld.py...")
-brocon = Listen(args.topic, args.listen, int(args.port), args.acld_host, int(args.acld_port), args.log_user, args.log_host)
-brocon.listen_loop()
-
+brocon = Listen(args.topic, args.listen, args.port, args.acld_host,
+    args.acld_port, args.log_user, args.log_host)
+try:
+    brocon.listen_loop()
+except KeyboardInterrupt:
+    pass
