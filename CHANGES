@@ -1,4 +1,19 @@
 
+0.2-11 | 2018-05-15 15:25:33 +0000
+
+  * Remove duplicate lines. (Craig Leres)
+
+  * You can now specify more than one "--acld_host" option to round robin
+    across multiple ACLD servers to use different ACLD servers and
+    ports.
+
+  * Add a FreeBSD rc.d script. (Craig Leres)
+
+  * Parse acld whitelist result as exists. (Johanna Amann)
+
+  * Port python scripts to new Broker API, and update examples and
+    documentation. (Corelight)
+
 0.2 | 2016-09-07 10:51:41 +0200
 
   * Release 0.2.

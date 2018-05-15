@@ -15,7 +15,7 @@ To use the connector scripts, you need to install a current master version
 of Bro with commands similar to this:
 
 	git clone --recursive git://git.bro.org/bro
-	./configure --prefix=[install prefix] --enable-broker --with-libcaf=[libcaf location]
+	./configure --prefix=[install prefix]
 	make install
 
 To allow python to find the installed python broker bindings, it might be necessary

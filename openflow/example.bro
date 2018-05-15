@@ -13,16 +13,14 @@ const switch_bro_port: count = 19 &redef;
 
 event NetControl::init() &priority=2
 	{
-	of_controller = OpenFlow::broker_new("of", 127.0.0.1, broker_port, "bro/event/openflow", switch_dpid);
+	of_controller = OpenFlow::broker_new("of", 127.0.0.1, broker_port, "bro/openflow", switch_dpid);
 	local pacf_of = NetControl::create_openflow(of_controller, NetControl::OfConfig($monitor=T, $forward=F, $priority_offset=+5));
 	NetControl::activate(pacf_of, 0);
 	}
 
-event Broker::outgoing_connection_established(peer_address: string,
-                                            peer_port: port,
-                                            peer_name: string)
+event Broker::peer_added(endpoint: Broker::EndpointInfo, msg: string)
 	{
-	print "Broker::outgoing_connection_established", peer_address, peer_port;
+	print "Broker peer added", endpoint$network;
 	}
 
 event NetControl::init_done()

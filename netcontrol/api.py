@@ -1,16 +1,19 @@
 import logging
 import re
-from pybroker import *
+import ipaddress
+import datetime
+import broker
+import broker.bro
 from select import select
 from enum import Enum, unique
 
 logger = logging.getLogger(__name__)
 
 def convertRecord(name, m):
-    if m.which() != data.tag_record:
+    if not isinstance(m, list):
         logger.error("Got non record element")
 
-    rec = m.as_record()
+    rec = m
 
     elements = None
     if name == "rule":
@@ -29,54 +32,60 @@ def convertRecord(name, m):
 
     dict = {}
     for i in range(0, len(elements)):
-        if rec.fields()[i].valid() == False:
+        if rec[i] is None:
             dict[elements[i]] = None
             continue
-        elif rec.fields()[i].get().which() == data.tag_record:
-            dict[elements[i]] = convertRecord(name+"->"+elements[i], rec.fields()[i].get())
+        elif isinstance(rec[i], list):
+            dict[elements[i]] = convertRecord(name+"->"+elements[i], rec[i])
             continue
 
-        dict[elements[i]] = convertElement(rec.fields()[i].get())
+        dict[elements[i]] = convertElement(rec[i])
 
     return dict
 
 def convertElement(el):
-    if el.which() == data.tag_boolean:
-        return el.as_bool()
-    if el.which() == data.tag_count:
-        return el.as_count()
-    elif el.which() == data.tag_integer:
-        return el.as_int()
-    elif el.which() == data.tag_real:
-        return el.as_real()
-    elif el.which() == data.tag_string:
-        return el.as_string()
-    elif el.which() == data.tag_address:
-        return str(el.as_address())
-    elif el.which() == data.tag_subnet:
-        return str(el.as_subnet())
-    elif el.which() == data.tag_port:
-        p = str(el.as_port())
+    if isinstance(el, broker.Count):
+        return el.value
+
+    if isinstance(el, ipaddress.IPv4Address):
+        return str(el);
+
+    if isinstance(el, ipaddress.IPv6Address):
+        return str(el);
+
+    if isinstance(el, ipaddress.IPv4Network):
+        return str(el);
+
+    if isinstance(el, ipaddress.IPv6Network):
+        return str(el);
+
+    if isinstance(el, broker.Port):
+        p = str(el)
         ex = re.compile('([0-9]+)(.*)')
         res = ex.match(p)
         return (res.group(1), res.group(2))
-    elif el.which() == data.tag_time:
-        return el.as_time()
-    elif el.which() == data.tag_duration:
-        return el.as_duration().value
-    elif el.which() == data.tag_enum_value:
-        tmp = el.as_enum().name
-        return re.sub(r'.*::', r'', tmp)
-    elif el.which() == data.tag_vector:
-        tmp = el.as_vector()
-        elements = []
-        for sel in tmp:
-            elements.append(convert_element(sel))
-        return elements
 
-    else:
-        logger.error("Unsupported type %d", el.which() )
-        return None
+    if isinstance(el, broker.Enum):
+        tmp = el.name
+        return re.sub(r'.*::', r'', tmp)
+
+    if isinstance(el, list):
+        return [convertElement(ell) for ell in el];
+
+    if isinstance(el, datetime.datetime):
+        return el
+
+    if isinstance(el, datetime.timedelta):
+        return el
+
+    if isinstance(el, int):
+        return el
+
+    if isinstance(el, str):
+        return el
+
+    logger.error("Unsupported type %s", type(el) )
+    return el;
 
 @unique
 class ResponseType(Enum):
@@ -102,32 +111,36 @@ class NetControlResponse:
 class Endpoint:
     def __init__(self, queue, host, port):
         self.queuename = queue
-        self.epl = endpoint("listener")
-        self.epl.listen(port, host)
-        self.icsq = self.epl.incoming_connection_status()
-        self.mql = message_queue(self.queuename, self.epl)
+        self.epl = broker.Endpoint()
+        self.epl.listen(host, port)
+        self.status_subscriber = self.epl.make_status_subscriber(True)
+        self.subscriber = self.epl.make_subscriber(self.queuename)
+
         logger.debug("Set up listener for "+host+":"+str(port)+" ("+queue+")")
-        self.msgs = None
-
     def getNextCommand(self):
-        if self.msgs == None or len(self.msgs) == 0:
+        while True:
             logger.debug("Waiting for broker message...")
-            readable, writable, exceptional = select([self.icsq.fd(), self.mql.fd()],[],[])
-            if ( self.icsq.fd() in readable ):
-                self.msgs = list(self.icsq.want_pop())
-            elif ( self.mql.fd() in readable ):
-                self.msgs = list(self.mql.want_pop())
+            readable, writable, exceptional = select(
+                    [self.status_subscriber.fd(), self.subscriber.fd()],
+                    [], [])
 
-        if self.msgs != None or len(self.msgs) > 0:
-            logger.debug("Handling broker message...")
-            msg = self.msgs.pop(0)
-            return self.handleBrokerMessage(msg)
+            if ( self.status_subscriber.fd() in readable ):
+                logger.debug("Handling broker status message...")
+                msg = self.status_subscriber.get()
+
+                if isinstance(msg, broker.Status):
+                    if msg.code() == broker.SC.PeerAdded:
+                        logger.info("Incoming connection established")
+                        return NetControlResponse(ResponseType.ConnectionEstablished)
+
+                    continue
+
+            elif ( self.subscriber.fd() in readable ):
+                logger.debug("Handling broker message...")
+                msg = self.subscriber.get()
+                return self.handleBrokerMessage(msg)
 
     def handleBrokerMessage(self, m):
-        if type(m).__name__ == "incoming_connection_status":
-            logger.info("Incoming connection established")
-            return NetControlResponse(ResponseType.ConnectionEstablished)
-
         if type(m).__name__ != "tuple":
             logger.error("Unexpected type %s, expected tuple", type(m).__name__)
             return NetControlResponse(ResponseType.Error)
@@ -136,13 +149,16 @@ class Endpoint:
             logger.error("Tuple without content?")
             return NetControlResponse(ResponseType.Error)
 
-        event_name = str(m[0])
+        (topic, event) = m
+        ev = broker.bro.Event(event)
+
+        event_name = ev.name()
         logger.debug("Got event "+event_name)
 
         if event_name == "NetControl::broker_add_rule":
-            return self._add_remove_rule(m, ResponseType.AddRule)
+            return self._add_remove_rule(ev.args(), ResponseType.AddRule)
         elif event_name == "NetControl::broker_remove_rule":
-            return self._add_remove_rule(m, ResponseType.RemoveRule)
+            return self._add_remove_rule(ev.args(), ResponseType.RemoveRule)
         elif event_name == "NetControl::broker_rule_added":
             return NetControlResponse(ResponseType.SelfEvent)
         elif event_name == "NetControl::broker_rule_removed":
@@ -156,18 +172,19 @@ class Endpoint:
             return NetControlResponse(ResponseType.Error, errormsg="Unknown event"+event_name)
 
     def _add_remove_rule(self, m, rtype):
-        if  ( (rtype == ResponseType.AddRule) and ( len(m) != 3 ) ) or ( (rtype == ResponseType.RemoveRule) and ( len(m) != 4 ) ):
+        if  ( (rtype == ResponseType.AddRule) and ( len(m) != 2 ) ) or ( (rtype == ResponseType.RemoveRule) and ( len(m) != 3 ) ):
             logger.error("wrong number of elements or type in tuple for add/remove_rule event")
             return NetControlResponse(ResponseType.Error, errormsg="wrong number of elements or type in tuple for add/remove_rule event")
-        if ( m[0].which() != data.tag_string ) or ( m[1].which() != data.tag_count ) or ( m[2].which() != data.tag_record ) :
+
+        if ( not isinstance(m[0], broker.Count) or
+             not isinstance(m[1], list) ):
             logger.error("wrong types of elements or type in tuple for add/remove_rule event")
             return NetControlResponse(ResponseType.Error, errormsg="wrong types of elements or type in tuple for add/remove_rule event")
 
-        name = m[0].as_string()
-        id = m[1].as_count()
-        rule = convertRecord("rule", m[2])
+        id = m[0].value
+        rule = convertRecord("rule", m[1])
 
-        return NetControlResponse(rtype, pluginid=id, rule=rule, rawrule=m[2])
+        return NetControlResponse(rtype, pluginid=id, rule=rule, rawrule=m[1])
 
     def sendRuleAdded(self, response, msg):
         self._rule_event("added", response, msg)
@@ -179,8 +196,6 @@ class Endpoint:
         self._rule_event("error", response, msg)
 
     def _rule_event(self, event, response, msg):
-        m = message([data("NetControl::broker_rule_"+event)])
-        m.push_back(data(response.pluginid))
-        m.push_back(response.rawrule)
-        m.push_back(data(msg))
-        self.epl.send(self.queuename, m)
+        args = [broker.Count(response.pluginid), response.rawrule, msg]
+        ev = broker.bro.Event("NetControl::broker_rule_"+event, args)
+        self.epl.publish(self.queuename, ev)
