@@ -14,7 +14,8 @@ Installation Instructions
 To use the connector scripts, you need to install a current master version
 of Bro with commands similar to this:
 
-	git clone --recursive git://git.bro.org/bro
+	git clone --recursive https://github.com/zeek/zeek
+	cd zeek
 	./configure --prefix=[install prefix]
 	make install
 
