@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Ryu OpenFlow controller that connects to the Bro OpenFlow
+# Ryu OpenFlow controller that connects to the Zeek OpenFlow
 # framework using Broker.
 #
 # Start with ./ryu/bin/ryu-manager controller.py
@@ -132,7 +132,7 @@ class BroController(app_manager.RyuApp):
             return
 
         (topic, event) = m
-        ev = broker.bro.Event(event)
+        ev = broker.zeek.Event(event)
         event_name = ev.name()
 
         if ( event_name == "OpenFlow::broker_flow_clear" ):
@@ -155,7 +155,7 @@ class BroController(app_manager.RyuApp):
             return
 
         # since this is really only a  convenience function we should return it and just do the
-        # flow-mod from bro ourselves
+        # flow-mod from Zeek ourselves
         name = m[0]
 
         dpid = m[1].value
@@ -184,7 +184,7 @@ class BroController(app_manager.RyuApp):
 
     def send_error(self, name, match, flow_mod, msg):
         args = [name, match, flow_mod, msg]
-        ev = broker.bro.Event("OpenFlow::flow_mod_failure", args)
+        ev = broker.zeek.Event("OpenFlow::flow_mod_failure", args)
         m.push_back(data(name))
         m.push_back(match)
         m.push_back(flow_mod)
@@ -193,7 +193,7 @@ class BroController(app_manager.RyuApp):
 
     def send_success(self, name, match, flow_mod, msg):
         args = [name, match, flow_mod, msg]
-        ev = broker.bro.Event("OpenFlow::flow_mod_success", args)
+        ev = broker.zeek.Event("OpenFlow::flow_mod_success", args)
         self.epl.publish(queuename, ev)
 
     def event_flow_mod(self, m):
@@ -512,7 +512,7 @@ class BroController(app_manager.RyuApp):
                 broker.Count(msg.idle_timeout),
                 broker.Count(msg.packet_count),
                 broker.Count(msg.byte_count)]
-        ev = broker.bro.Event("OpenFlow::flow_removed", args)
+        ev = broker.zeek.Event("OpenFlow::flow_removed", args)
         self.epl.publish(queuename, ev)
 
 
