@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Command-line interface for the Network Control Framework of Bro, using Broker.
+# Command-line interface for the Network Control Framework of Zeek, using Broker.
 
 import logging
 import netcontrol
@@ -73,7 +73,7 @@ class Listen:
 
         output = ""
 
-        self.logger.info("Received %s from Bro: %s", type, cmd)
+        self.logger.info("Received %s from Zeek: %s", type, cmd)
 
         for i in commands:
             currcmd = self.replace_command(i, cmd)
@@ -96,10 +96,10 @@ class Listen:
                 return
 
         if response.type == netcontrol.ResponseType.AddRule:
-            self.logger.info("Sending rule_added to Bro")
+            self.logger.info("Sending rule_added to Zeek")
             self.endpoint.sendRuleAdded(response, output)
         else:
-            self.logger.info("Sending rule_removed to Bro")
+            self.logger.info("Sending rule_removed to Zeek")
             self.endpoint.sendRuleRemoved(response, output)
 
     def replace_single_command(self, argstr, cmds):

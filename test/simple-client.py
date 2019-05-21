@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 # Simple command line client using the provided API. Test, e.g., with
-# the provided simple-test.bro
+# the provided simple-test.zeek
 
 import logging, netcontrol, pprint
 

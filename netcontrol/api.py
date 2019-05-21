@@ -3,7 +3,7 @@ import re
 import ipaddress
 import datetime
 import broker
-import broker.bro
+import broker.zeek
 from select import select
 from enum import Enum, unique
 
@@ -150,7 +150,7 @@ class Endpoint:
             return NetControlResponse(ResponseType.Error)
 
         (topic, event) = m
-        ev = broker.bro.Event(event)
+        ev = broker.zeek.Event(event)
 
         event_name = ev.name()
         logger.debug("Got event "+event_name)
@@ -197,5 +197,5 @@ class Endpoint:
 
     def _rule_event(self, event, response, msg):
         args = [broker.Count(response.pluginid), response.rawrule, msg]
-        ev = broker.bro.Event("NetControl::broker_rule_"+event, args)
+        ev = broker.zeek.Event("NetControl::broker_rule_"+event, args)
         self.epl.publish(self.queuename, ev)

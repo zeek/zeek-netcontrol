@@ -1,4 +1,10 @@
 
+0.3-3 | 2019-05-20 18:59:12 -0700
+
+  * Rename Bro to Zeek (Daniel Thayer)
+
+  * Update git clone command in README (Jon Siwek, Corelight)
+
 0.3 | 2018-05-21 18:47:21 +0000
 
   * Release 0.3.

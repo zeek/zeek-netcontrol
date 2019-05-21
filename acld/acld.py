@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Acld interface for the Network Control Framework of Bro, using Broker.
+# Acld interface for the Network Control Framework of Zeek, using Broker.
 
 from __future__ import print_function
 
@@ -18,7 +18,7 @@ import datetime
 import time
 
 import broker
-import broker.bro
+import broker.zeek
 from select import select
 from logging.handlers import TimedRotatingFileHandler
 
@@ -272,7 +272,7 @@ class Listen(object):
             return
 
         (topic, event) = m
-        ev = broker.bro.Event(event)
+        ev = broker.zeek.Event(event)
         event_name = ev.name()
 
         if event_name == "NetControl::acld_add_rule":
@@ -313,10 +313,10 @@ class Listen(object):
 
     def rule_event(self, event, id, arule, rule, msg):
         arule = self.record_to_record("acldrule", arule)
-        self.logger.info("Sending to Bro: NetControl::acld_rule_%s id=%d, arule=%s, msg=%s", event, id, arule, msg)
+        self.logger.info("Sending to Zeek: NetControl::acld_rule_%s id=%d, arule=%s, msg=%s", event, id, arule, msg)
 
         args = [broker.Count(id), rule, msg]
-        ev = broker.bro.Event("NetControl::acld_rule_"+event, args)
+        ev = broker.zeek.Event("NetControl::acld_rule_"+event, args)
         self.epl.publish(self.queuename, ev)
 
     def record_to_record(self, name, m):

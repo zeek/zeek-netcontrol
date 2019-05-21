@@ -7,7 +7,7 @@ global of_controller: OpenFlow::Controller;
 
 # Switch datapath ID
 const switch_dpid: count = 12 &redef;
-# port on which Bro is listening - we install a rule to the switch to mirror traffic here...
+# port on which Zeek is listening - we install a rule to the switch to mirror traffic here...
 const switch_bro_port: count = 19 &redef;
 
 
