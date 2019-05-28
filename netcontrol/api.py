@@ -10,7 +10,7 @@ from enum import Enum, unique
 logger = logging.getLogger(__name__)
 
 def convertRecord(name, m):
-    if not isinstance(m, list):
+    if not isinstance(m, tuple):
         logger.error("Got non record element")
 
     rec = m
@@ -35,7 +35,7 @@ def convertRecord(name, m):
         if rec[i] is None:
             dict[elements[i]] = None
             continue
-        elif isinstance(rec[i], list):
+        elif isinstance(rec[i], tuple):
             dict[elements[i]] = convertRecord(name+"->"+elements[i], rec[i])
             continue
 
@@ -69,8 +69,8 @@ def convertElement(el):
         tmp = el.name
         return re.sub(r'.*::', r'', tmp)
 
-    if isinstance(el, list):
-        return [convertElement(ell) for ell in el];
+    if isinstance(el, tuple):
+        return tuple(convertElement(ell) for ell in el);
 
     if isinstance(el, datetime.datetime):
         return el
@@ -177,7 +177,7 @@ class Endpoint:
             return NetControlResponse(ResponseType.Error, errormsg="wrong number of elements or type in tuple for add/remove_rule event")
 
         if ( not isinstance(m[0], broker.Count) or
-             not isinstance(m[1], list) ):
+             not isinstance(m[1], tuple) ):
             logger.error("wrong types of elements or type in tuple for add/remove_rule event")
             return NetControlResponse(ResponseType.Error, errormsg="wrong types of elements or type in tuple for add/remove_rule event")
 
@@ -197,5 +197,5 @@ class Endpoint:
 
     def _rule_event(self, event, response, msg):
         args = [broker.Count(response.pluginid), response.rawrule, msg]
-        ev = broker.zeek.Event("NetControl::broker_rule_"+event, args)
+        ev = broker.zeek.Event("NetControl::broker_rule_"+event, *args)
         self.epl.publish(self.queuename, ev)
