@@ -5,6 +5,8 @@
 #
 # Start with ./ryu/bin/ryu-manager controller.py
 
+import datetime
+import ipaddress
 import logging
 import time
 import re
@@ -86,7 +88,7 @@ class BroController(app_manager.RyuApp):
     def start(self):
         self.epl.listen("127.0.0.1", 9999)
         self.status_subscriber = self.epl.make_status_subscriber(True)
-        self.subscriber = self.epl.make_subscriber(self.queuename)
+        self.subscriber = self.epl.make_subscriber(queuename)
 
         self.threads.append(hub.spawn(self._broker_loop))
         self.logger.info("Started broker communication...")
@@ -183,21 +185,15 @@ class BroController(app_manager.RyuApp):
         ryu.app.ofctl.api.send_msg(self, msg)
 
     def send_error(self, name, match, flow_mod, msg):
-        args = [name, match, flow_mod, msg]
-        ev = broker.zeek.Event("OpenFlow::flow_mod_failure", args)
-        m.push_back(data(name))
-        m.push_back(match)
-        m.push_back(flow_mod)
-        m.push_back(data(msg))
+        ev = broker.zeek.Event("OpenFlow::flow_mod_failure", name, match, flow_mod, msg)
         self.epl.publish(queuename, ev)
 
     def send_success(self, name, match, flow_mod, msg):
-        args = [name, match, flow_mod, msg]
-        ev = broker.zeek.Event("OpenFlow::flow_mod_success", args)
+        ev = broker.zeek.Event("OpenFlow::flow_mod_success", name, match, flow_mod, msg)
         self.epl.publish(queuename, ev)
 
     def event_flow_mod(self, m):
-        if ( len(m) != 4 ) or ( not isinstance(m[0], str) ) or ( not isinstance(m[1], broker.Count) ) or ( not isinstance(m[2], list) ) or ( not isinstance(m[3], list) ):
+        if ( len(m) != 4 ) or ( not isinstance(m[0], str) ) or ( not isinstance(m[1], broker.Count) ) or ( not isinstance(m[2], tuple) ) or ( not isinstance(m[3], tuple) ):
             self.logger.error("wrong number of elements or type in tuple for event_flow_mod")
             return
 
@@ -211,7 +207,7 @@ class BroController(app_manager.RyuApp):
 
         if dp is None:
             self.logger.error("name %s dpid %d not found for flow_mod", name, dpid)
-            self.send_error(m[2], m[3], "dpid not found")
+            self.send_error(name, m[2], m[3], "dpid not found")
             return
 
         self.dpids[dp.id] = name
@@ -431,7 +427,7 @@ class BroController(app_manager.RyuApp):
 
         rm = m
         rl = rm[9]
-        recaction = self.record_to_record(match_actions, rl.get())
+        recaction = self.record_to_record(match_actions, rl)
         rec['actions'] = recaction
 
         return rec
@@ -543,7 +539,7 @@ class BroController(app_manager.RyuApp):
         #    self.logger.error("wrong number of elements in parse_ofp_match")
         #    return
 
-        if not isinstance(m, list):
+        if not isinstance(m, tuple):
             self.logger.error("Got non record element")
 
         rec = m
@@ -584,8 +580,8 @@ class BroController(app_manager.RyuApp):
             tmp = el.name
             return re.sub(r'.*::', r'', tmp)
 
-        if isinstance(el, list):
-            return [convertElement(ell) for ell in el];
+        if isinstance(el, tuple):
+            return tuple(self.convert_element(ell) for ell in el);
 
         if isinstance(el, datetime.datetime):
             return el
