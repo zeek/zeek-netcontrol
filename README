@@ -19,10 +19,10 @@ of Zeek with commands similar to this:
 	./configure --prefix=[install prefix]
 	make install
 
-To allow python to find the installed python Broker bindings, it might be necessary
-to adjust the PYTHONPATH variable similar to this:
+To allow python to find the installed python Broker bindings, it might be
+necessary to adjust the PYTHONPATH variable similar to this:
 
-	export PYTHONPATH=[install prefix]/lib/broctl:[this directory]
+	export PYTHONPATH=[install prefix]/lib/zeekctl:[this directory]
 
 after that, you should be able to launch the provided scripts.
 
