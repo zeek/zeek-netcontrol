@@ -4,7 +4,7 @@ redef exit_only_after_terminate = T;
 
 event NetControl::init()
 	{
-	local netcontrol_broker = NetControl::create_broker(NetControl::BrokerConfig($host=127.0.0.1, $bport=9977/tcp, $topic="bro/event/netcontrol-example"), T);
+	local netcontrol_broker = NetControl::create_broker(NetControl::BrokerConfig($host=127.0.0.1, $bport=9977/tcp, $topic="zeek/event/netcontrol-example"), T);
 	NetControl::activate(netcontrol_broker, 0);
 	}
 
