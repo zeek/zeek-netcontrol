@@ -5,7 +5,7 @@ const broker_port: port = 9999/tcp &redef;
 
 event NetControl::init()
 	{
-	local netcontrol_acld = NetControl::create_acld([$acld_host=127.0.0.1, $acld_port=broker_port, $acld_topic="bro/pacf"]);
+	local netcontrol_acld = NetControl::create_acld([$acld_host=127.0.0.1, $acld_port=broker_port, $acld_topic="zeek/event/pacf"]);
 	NetControl::activate(netcontrol_acld, 0);
 	}
 
@@ -32,6 +32,11 @@ event NetControl::rule_error(r: NetControl::Rule, p: NetControl::PluginState, ms
 event NetControl::rule_timeout(r: NetControl::Rule, i: NetControl::FlowInfo, p: NetControl::PluginState)
 	{
 	print "Rule timeout", r$id, i;
+	}
+
+event NetControl::rule_removed(r: NetControl::Rule, p: NetControl::PluginState, msg: string)
+	{
+	print "Rule removed", r$id, msg;
 	}
 
 event connection_established(c: connection)
