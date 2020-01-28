@@ -4,8 +4,13 @@
 
 import logging
 import netcontrol
-import thread
-import yaml
+import sys
+import _thread
+from yaml import load
+try:
+    from yaml import CLoader as Loader
+except ImportError:
+    from yaml import Loader
 import string
 import re
 import argparse
@@ -21,7 +26,7 @@ def parseArgs():
     parser = argparse.ArgumentParser()
     parser.add_argument('--listen', default="127.0.0.1", help="Address to listen on for connections. Default: 127.0.0.1")
     parser.add_argument('--port', default=9977, help="Port to listen on for connections. Default: 9977")
-    parser.add_argument('--topic', default="bro/event/netcontrol-example", help="Topic to subscribe to. Default: bro/event/netcontrol-example")
+    parser.add_argument('--topic', default="zeek/event/netcontrol-example", help="Topic to subscribe to. Default: zeek/event/netcontrol-example")
     parser.add_argument('--file', default="commands.yaml", help="File to read commands from. Default: commands.yaml")
     parser.add_argument('--debug', const=logging.DEBUG, default=logging.INFO, action='store_const', help="Enable debug output")
 
@@ -44,12 +49,12 @@ class Listen:
 
             if response.type == netcontrol.ResponseType.AddRule:
                 if self.use_threads:
-                    thread.start_new_thread(self._add_remove_rule, (response, ))
+                    _thread.start_new_thread(self._add_remove_rule, (response, ))
                 else:
                     self._add_remove_rule(response)
             if response.type == netcontrol.ResponseType.RemoveRule:
                 if self.use_threads:
-                    thread.start_new_thread(self._add_remove_rule, (response, ))
+                    _thread.start_new_thread(self._add_remove_rule, (response, ))
                 else:
                     self._add_remove_rule(response)
 
@@ -173,8 +178,8 @@ class Listen:
             'entity.i': 'mod.port',
         }
 
-        for (k, v) in mapping.items():
-            path = string.split(k, '.')
+        for (k, v) in list(mapping.items()):
+            path = k.split('.')
             e = rule
             for i in path:
                 if e == None:
@@ -193,8 +198,8 @@ class Listen:
                 cmd[v+".proto"] = e[1]
             else:
                 cmd[v] = e
-                if isinstance(e, basestring):
-                    spl = string.split(e, "/")
+                if isinstance(e, str):
+                    spl = e.split("/")
                     if len(spl) > 1:
                         cmd[v+".ip"] = spl[0]
                         cmd[v+".net"] = spl[1]
@@ -207,12 +212,12 @@ class Listen:
 
 args = parseArgs()
 
-stream = file(args.file, 'r')
-config = yaml.load(stream)
+stream = open(args.file, 'r')
+config = load(stream, Loader=Loader)
 
 logging.basicConfig(level=args.debug)
 
 logging.info("Starting command-line client...")
-brocon = Listen(args.topic, args.listen, int(args.port), config)
-brocon.listen_loop()
+zeekcon = Listen(args.topic, args.listen, int(args.port), config)
+zeekcon.listen_loop()
 

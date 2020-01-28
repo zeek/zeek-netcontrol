@@ -42,7 +42,7 @@ def parseArgs():
         help='user name provided to acld (default: %(default)s)')
     parser.add_argument('--log-host', default=defaulthost,
         help='host name provided to acld (default: %(default)s)')
-    parser.add_argument('--topic', default="bro/event/pacf",
+    parser.add_argument('--topic', default="zeek/event/pacf",
         help="Topic to subscribe to. (default: %(default)s)")
     parser.add_argument('--debug', const=logging.DEBUG, action='store_const',
         default=logging.INFO,
@@ -237,7 +237,7 @@ class Listen(object):
             if len(data) == 0:
                 self.logger.warning('%s Disconnected' % self.remote_ident)
                 self.connect()
-            self.buffer += data
+            self.buffer += data.decode("utf-8")
         except socket.error as e:
             err = e.args[0]
             if err == errno.EAGAIN or err == errno.EWOULDBLOCK:
@@ -292,7 +292,8 @@ class Listen(object):
             return
 
     def add_remove_rule(self, name, m, add):
-        if ( len(m) != 3 ) or ( not isinstance(m[0], broker.Count) ) or (not isinstance(m[1], list) ) or ( not isinstance(m[2], list) ):
+        print(m)
+        if ( len(m) != 3 ) or ( not isinstance(m[0], broker.Count) ) or (not isinstance(m[1], tuple) ) or ( not isinstance(m[2], tuple) ):
             self.logger.error("wrong number of elements or type in tuple for acld_add|remove_rule")
             return
 
@@ -309,18 +310,17 @@ class Listen(object):
 
         self.waiting[arule['cookie']] = {'add': add, 'cmd': cmd, 'id': m[0], 'rule': m[1], 'arule': m[2]}
         self.logger.info("Sending to ACLD: %s", ", ".join(sendlist))
-        self.sock.sendall("\r\n".join(sendlist)+"\r\n")
+        self.sock.sendall(("\r\n".join(sendlist)+"\r\n").encode())
 
     def rule_event(self, event, id, arule, rule, msg):
         arule = self.record_to_record("acldrule", arule)
-        self.logger.info("Sending to Zeek: NetControl::acld_rule_%s id=%d, arule=%s, msg=%s", event, id, arule, msg)
+        self.logger.info("Sending to Zeek: NetControl::acld_rule_%s id=%d, arule=%s, msg=%s", event, id.value, arule, msg)
 
-        args = [broker.Count(id), rule, msg]
-        ev = broker.zeek.Event("NetControl::acld_rule_"+event, args)
+        ev = broker.zeek.Event("NetControl::acld_rule_"+event, id, rule, msg)
         self.epl.publish(self.queuename, ev)
 
     def record_to_record(self, name, m):
-        if not isinstance(m, list):
+        if not isinstance(m, tuple):
             self.logger.error("Got non record element")
 
         rec = m
@@ -337,7 +337,7 @@ class Listen(object):
             if rec[i] is None:
                 dict[elements[i]] = None
                 continue
-            elif isinstance(rec[i], list):
+            elif isinstance(rec[i], tuple):
                 dict[elements[i]] = self.record_to_record(name+"->"+elements[i], rec[i])
                 continue
 
