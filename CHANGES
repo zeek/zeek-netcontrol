@@ -1,4 +1,17 @@
 
+0.5 | 2020-01-28 12:06:18 -0800
+
+  * Release 0.5.
+
+  * Python 3, and broker API change updates for acld.py (Johanna Amann)
+
+  * a bit of bro->zeek (Johanna Amann)
+
+  * Update command-line example to python3. (Johanna Amann)
+
+    This also fixes a non-matching topic names - which made the current
+    state not work in an a tad surprising way.
+
 0.4 | 2019-06-12 15:03:55 -0700
 
   * Release 0.4.
