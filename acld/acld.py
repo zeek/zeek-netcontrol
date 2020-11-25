@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Acld interface for the Network Control Framework of Zeek, using Broker.
 
