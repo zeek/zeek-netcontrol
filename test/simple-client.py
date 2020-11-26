@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Simple command line client using the provided API. Test, e.g., with
 # the provided simple-test.zeek

@@ -37,7 +37,7 @@ broker_acld_logfile=${broker_acld_logfile:-${netcontrol}/acld/broker-logs}
 broker_acld_env="PYTHONPATH=${netcontrol}/lib/python"
 
 command=/usr/sbin/daemon
-command_interpreter=python
+command_interpreter=python3
 procname=${broker_acld_program:-${netcontrol}/acld/broker-acld.py}
 unset broker_acld_program
 
