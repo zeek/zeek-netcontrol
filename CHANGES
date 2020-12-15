@@ -1,4 +1,8 @@
 
+0.6 | 2020-11-26 17:59:05 +0000
+
+  * Release 0.6.
+
 0.5-2 | 2020-11-26 17:58:52 +0000
 
   * Change Python invocations to explicit `python3` (Jon Siwek, Corelight)
