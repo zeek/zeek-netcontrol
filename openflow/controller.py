@@ -37,23 +37,23 @@ supported_ofctl = {
     ofproto_v1_3.OFP_VERSION: ofctl_v1_3,
 }
 
-queuename = "bro/openflow"
+queuename = "zeek/openflow"
 
 # for monkey-patching.
 # Barf.
-def bro_send_msg(self, msg):
+def zeek_send_msg(self, msg):
     assert isinstance(msg, self.ofproto_parser.MsgBase)
 
-    if not hasattr(self, 'brosend'):
-        self.brosend = 0
-        self.bromessage = None
+    if not hasattr(self, 'zeeksend'):
+        self.zeeksend = 0
+        self.zeekmessage = None
 
     # if we set before that we just want the message returned
     # without sending it on - return it to us so we can use
     # it further...
-    if ( self.brosend == 1 ):
-        self.brosend = 0
-        self.bromessage = msg
+    if ( self.zeeksend == 1 ):
+        self.zeeksend = 0
+        self.zeekmessage = msg
         return msg
 
     self.send_msg_orig(msg)
@@ -62,9 +62,9 @@ def bro_send_msg(self, msg):
 # with it.
 # :/
 ryu.controller.controller.Datapath.send_msg_orig = ryu.controller.controller.Datapath.send_msg
-ryu.controller.controller.Datapath.send_msg = bro_send_msg
+ryu.controller.controller.Datapath.send_msg = zeek_send_msg
 
-class BroController(app_manager.RyuApp):
+class ZeekController(app_manager.RyuApp):
 
     OFP_VERSIONS = [ofproto_v1_0.OFP_VERSION,
                     ofproto_v1_2.OFP_VERSION,
@@ -73,7 +73,7 @@ class BroController(app_manager.RyuApp):
     _CONTEXTS = {'dpset': dpset.DPSet}
 
     def __init__(self, *args, **kwargs):
-        super(BroController, self).__init__(*args, **kwargs);
+        super(ZeekController, self).__init__(*args, **kwargs);
 
         self.dpset = kwargs['dpset']
         self.data = {}
@@ -156,7 +156,7 @@ class BroController(app_manager.RyuApp):
             self.logger.error("wrong number of elements or type in tuple for event_flow_clear")
             return
 
-        # since this is really only a  convenience function we should return it and just do the
+        # since this is only a convenience function we should return it and just do the
         # flow-mod from Zeek ourselves
         name = m[0]
 
