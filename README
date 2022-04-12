@@ -22,7 +22,7 @@ of Zeek with commands similar to this:
 To allow python to find the installed python Broker bindings, it might be
 necessary to adjust the PYTHONPATH variable similar to this:
 
-	export PYTHONPATH=[install prefix]/lib/zeekctl:[this directory]
+	export PYTHONPATH=[install prefix]/lib/zeek/python:[this directory]
 
 after that, you should be able to launch the provided scripts.
 
@@ -51,7 +51,7 @@ OpenFlow connector
 The [openflow](openflow/) directory contains the source for a Ryu OpenFlow
 controller, that can be used to interface the Zeek NetControl framework with an
 OpenFlow capable switch. To use the controller, you need to first install the
-[Ryu SDN framework](https://osrg.github.io/ryu/).
+[Ryu SDN framework](https://ryu-sdn.org/).
 
 After installation, you can run the openflow controller by executing
 
