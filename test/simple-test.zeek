@@ -38,4 +38,3 @@ event NetControl::init_done() &priority=-5
 	test_mac();
 	test_mac_flow();
 	}
-

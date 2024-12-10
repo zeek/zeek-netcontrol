@@ -220,4 +220,3 @@ logging.basicConfig(level=args.debug)
 logging.info("Starting command-line client...")
 zeekcon = Listen(args.topic, args.listen, int(args.port), config)
 zeekcon.listen_loop()
-

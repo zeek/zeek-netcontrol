@@ -51,4 +51,3 @@ event connection_established(c: connection)
 
 	NetControl::add_rule(r);
 	}
-
